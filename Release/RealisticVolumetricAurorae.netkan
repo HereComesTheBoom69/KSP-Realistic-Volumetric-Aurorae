@@ -1,0 +1,25 @@
+{
+    "spec_version": "v1.34",
+    "identifier": "RealisticVolumetricAurorae",
+    "name": "Realistic Volumetric Aurorae",
+    "abstract": "A volumetric polar aurora for Kerbin: raymarched folding ribbons and rays, an auroral oval with a storm cycle, occluded per pixel by EVE's volumetric clouds, with a live in-game tuning window. No dependencies.",
+    "author": "HereComesTheBoom",
+    "license": "CC-BY-NC-SA-4.0",
+    "$kref": "#/ckan/spacedock/SPACEDOCK_MOD_ID",
+    "$vref": "#/ckan/ksp-avc",
+    "tags": [ "graphics", "plugin", "config" ],
+    "resources": {
+        "homepage":   "FORUM_THREAD_URL",
+        "spacedock":  "SPACEDOCK_MOD_URL",
+        "repository": "https://github.com/SkinnyThePimp/KSP-Realistic-Volumetric-Aurorae",
+        "bugtracker": "https://github.com/SkinnyThePimp/KSP-Realistic-Volumetric-Aurorae/issues",
+        "license":    "https://creativecommons.org/licenses/by-nc-sa/4.0/"
+    },
+    "supports": [
+        { "name": "EnvironmentalVisualEnhancements" },
+        { "name": "ModuleManager" }
+    ],
+    "install": [
+        { "find": "RealisticVolumetricAurorae", "install_to": "GameData" }
+    ]
+}

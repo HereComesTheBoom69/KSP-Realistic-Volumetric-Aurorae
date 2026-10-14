@@ -1,0 +1,40 @@
+# Realistic Volumetric Aurorae — source repository ignores
+
+# Build outputs (any depth: Plugin/bin, Plugin/obj, Unity/obj ...)
+bin/
+obj/
+AssetBundles/
+*.zip
+*.manifest
+
+# Visual Studio / Rider / VS Code state
+.vs/
+.idea/
+.vscode/
+*.user
+*.suo
+
+# Unity-generated project state (Unity rebuilds all of this from Assets/)
+Library/
+Temp/
+Logs/
+UserSettings/
+Unity/*.csproj
+Unity/*.sln
+
+# KSP's, Unity's and Harmony's assemblies: never commit them (not ours to redistribute)
+Plugin/refs/*
+!Plugin/refs/COPY_THESE_DLLS_HERE.txt
+
+# Built binaries belong in releases, not in the tree (covers old bundle/DLL names too)
+GameData/RealisticVolumetricAurorae/Bundles/*
+!GameData/RealisticVolumetricAurorae/Bundles/PUT_BUILT_BUNDLE_HERE.txt
+GameData/RealisticVolumetricAurorae/Plugins/*
+!GameData/RealisticVolumetricAurorae/Plugins/PUT_BUILT_DLL_HERE.txt
+
+# Pre-rebrand staging folder, if it is still lying around in the working copy
+GameData/SPVE_AuroraGlow/
+
+# OS noise
+.DS_Store
+Thumbs.db

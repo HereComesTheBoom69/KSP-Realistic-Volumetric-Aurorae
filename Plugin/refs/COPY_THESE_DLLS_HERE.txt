@@ -1,0 +1,16 @@
+Copy these SEVEN files from
+
+  C:\Program Files (x86)\Steam\steamapps\common\Kerbal Space Program\KSP_x64_Data\Managed\
+
+into this folder:
+
+  Assembly-CSharp.dll
+  UnityEngine.dll
+  UnityEngine.CoreModule.dll
+  UnityEngine.PhysicsModule.dll
+  UnityEngine.AssetBundleModule.dll
+  UnityEngine.IMGUIModule.dll          <- new in v3 (in-game tuning window: GUILayout, GUISkin)
+  UnityEngine.InputLegacyModule.dll    <- new in v3 (hotkey: Input, KeyCode)
+
+They are referenced with Copy Local = false, so they are never copied into
+the build output and never shipped with the mod.
