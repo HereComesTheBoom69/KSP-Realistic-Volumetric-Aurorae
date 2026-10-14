@@ -19,7 +19,10 @@ pixel by the clouds' own transmittance.
 2. Copy the `GameData/RealisticVolumetricAurorae` folder from the zip into
    your KSP `GameData`.
 
-That is all. Nothing else is required.
+That is all. Nothing else is required. If you ever see no aurora, check
+`KSP.log` for lines starting with `[RVA]`: a missing-file message there (and,
+since 1.0.1, a dialog at the main menu) means the folder was not copied whole —
+`Bundles/rva_shaders` must be a file sitting directly in `Bundles/`.
 
 Layout:
 ```

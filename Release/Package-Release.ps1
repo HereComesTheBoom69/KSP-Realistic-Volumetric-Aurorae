@@ -37,8 +37,9 @@ if ($FromGameData) {
     $Bundle = Join-Path $FromGameData "RealisticVolumetricAurorae\Bundles\rva_shaders"
     $Dll    = Join-Path $FromGameData "RealisticVolumetricAurorae\Plugins\RealisticVolumetricAurorae.dll"
 }
-if (-not $Bundle -or -not (Test-Path $Bundle)) { throw "Shader bundle not found: '$Bundle' (build it in Unity: RVA > Build Shader Bundle)" }
-if (-not $Dll    -or -not (Test-Path $Dll))    { throw "DLL not found: '$Dll' (build the Release configuration in Visual Studio)" }
+if (-not $Bundle -or -not (Test-Path $Bundle -PathType Leaf)) { throw "Shader bundle not found or not a file: '$Bundle' (build it in Unity: RVA > Build Shader Bundle; pass the FILE AssetBundles\rva_shaders, not a folder)" }
+if (-not $Dll    -or -not (Test-Path $Dll    -PathType Leaf)) { throw "DLL not found or not a file: '$Dll' (build the Release configuration in Visual Studio; pass the FILE bin\Release\RealisticVolumetricAurorae.dll, not a folder)" }
+if ((Get-Item $Bundle).Length -lt 10KB) { throw "'$Bundle' is only $((Get-Item $Bundle).Length) bytes — that is not the shader bundle (did you pass the .manifest?)" }
 if ($Dll -match '\\Dev\\') { Write-Warning "The DLL path contains '\Dev\' — make sure you are packaging the RELEASE build, not the dev build." }
 
 $verJson = Get-Content (Join-Path $src "RealisticVolumetricAurorae.version") -Raw | ConvertFrom-Json
@@ -79,6 +80,27 @@ Remove-Item $stage -Recurse -Force
 Write-Host "`nRelease zip: $zip"
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $z = [System.IO.Compression.ZipFile]::OpenRead($zip)
-try   { $z.Entries | Where-Object { $_.Length -gt 0 } | ForEach-Object { Write-Host ("  {0,10}  {1}" -f $_.Length, $_.FullName) } }
+try {
+    $entries = @($z.Entries | ForEach-Object { $_.FullName.Replace('\', '/') })
+    $z.Entries | Where-Object { $_.Length -gt 0 } | ForEach-Object { Write-Host ("  {0,10}  {1}" -f $_.Length, $_.FullName) }
+
+    # Layout check (1.0.1): the 1.0.0 zip shipped the bundle and the DLL one folder too deep
+    # (Bundles/rva_shaders/rva_shaders, Plugins/RealisticVolumetricAurorae.dll/...). KSP finds a
+    # nested DLL anyway, so the game looked healthy while the plugin could not find its bundle.
+    $must = @("GameData/RealisticVolumetricAurorae/Bundles/rva_shaders",
+              "GameData/RealisticVolumetricAurorae/Plugins/RealisticVolumetricAurorae.dll",
+              "GameData/RealisticVolumetricAurorae/RealisticVolumetricAurorae.version",
+              "GameData/RealisticVolumetricAurorae/LICENSE.txt")
+    foreach ($m in $must) {
+        $e = $z.Entries | Where-Object { $_.FullName.Replace('\', '/') -eq $m }
+        if (-not $e)            { throw "ZIP LAYOUT ERROR: missing entry '$m'" }
+        if ($e.Length -le 0)    { throw "ZIP LAYOUT ERROR: '$m' is empty or is a folder, not a file" }
+    }
+    $nested = $entries | Where-Object { $_ -like "GameData/RealisticVolumetricAurorae/Bundles/rva_shaders/*" -or $_ -like "GameData/RealisticVolumetricAurorae/Plugins/RealisticVolumetricAurorae.dll/*" }
+    if ($nested) { throw "ZIP LAYOUT ERROR: the bundle or the DLL is nested inside a folder of the same name: $($nested -join ', ')" }
+    if ($entries -contains "GameData/RealisticVolumetricAurorae/PluginData/settings.cfg") { throw "ZIP LAYOUT ERROR: settings.cfg must not ship (CKAN would overwrite users' settings on upgrade)" }
+    Write-Host "`nLayout check passed: bundle, DLL, .version and LICENSE are directly where the plugin expects them."
+}
+catch   { $z.Dispose(); Remove-Item $zip -Force -ErrorAction SilentlyContinue; throw }   # never leave a bad zip behind to upload by accident
 finally { $z.Dispose() }
 Write-Host "`nNext: Release\RELEASE_GUIDE.md"

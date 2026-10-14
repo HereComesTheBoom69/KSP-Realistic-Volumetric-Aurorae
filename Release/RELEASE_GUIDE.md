@@ -13,16 +13,31 @@ both), and CKAN happens on its own after SpaceDock.
    (Not the Dev build — the release DLL hides the dev-only settings.)
 3. Install both into `GameData/RealisticVolumetricAurorae/` in KSP, start a
    flight, check KSP.log for
-   `[RVA] Realistic Volumetric Aurorae (RVA) v1.0.0 (release build)` and the
-   renderer line; open Alt+F8 and confirm the title says v1.0.0 *without* "(dev build)".
+   `[RVA] Realistic Volumetric Aurorae (RVA) v<version> (release build)` and the
+   renderer line; open Alt+F8 and confirm the title shows the version *without* "(dev build)".
 4. Package: in PowerShell, from the kit folder
 
        .\Release\Package-Release.ps1 -FromGameData "C:\...\Kerbal Space Program\GameData"
 
-   → `RealisticVolumetricAurorae-1.0.0.zip`. It lists what it packed; it must
-   show the bundle, the DLL, `settings-defaults.cfg`, the two Compatibility
-   patches, the `.version` file and `LICENSE.txt`, all under
-   `GameData/RealisticVolumetricAurorae/`.
+   → `RealisticVolumetricAurorae-<version>.zip`. It lists what it packed and
+   (since 1.0.1) **fails loudly if the layout is wrong**: the bundle must be the
+   file `GameData/RealisticVolumetricAurorae/Bundles/rva_shaders` and the DLL
+   the file `.../Plugins/RealisticVolumetricAurorae.dll` — directly inside
+   those folders, never inside a folder of the same name. The 1.0.0 zip was
+   hand-built with `Bundles/rva_shaders/rva_shaders` and
+   `Plugins/RealisticVolumetricAurorae.dll/RealisticVolumetricAurorae.dll`;
+   KSP still loaded the nested DLL, so the game looked fine while the plugin
+   could not find its bundle and nobody who downloaded it saw an aurora.
+   Use the script; if you must zip by hand, mirror this exactly:
+
+       GameData/RealisticVolumetricAurorae/Bundles/rva_shaders            (a file, no extension)
+       GameData/RealisticVolumetricAurorae/Plugins/RealisticVolumetricAurorae.dll
+
+5. **Test the zip, not your working folder.** Move your own
+   `GameData/RealisticVolumetricAurorae` aside, extract the release zip into
+   GameData, start KSP, and check the log for `Bundle loaded` and `Shaders
+   ready`. Put your folder back afterwards. This is the step that would have
+   caught 1.0.0.
 
    Why `settings-defaults.cfg` and not `settings.cfg`: CKAN overwrites every
    file it installed when it upgrades a mod, and `settings.cfg` is the user's.
@@ -109,6 +124,7 @@ the editor). Fill in the two links and attach the images.
 
 1. Bump three things together: `Version` const in `RVABootstrap.cs`,
    `<Version>` in the csproj, `VERSION` in the `.version` file.
-2. Rebuild what changed (shader → bundle; C# → DLL), test, run the packager.
+2. Rebuild what changed (shader → bundle; C# → DLL) **from the repository's
+   source**, run the packager, then test the zip itself (step 0.5).
 3. GitHub release (tag + zip), SpaceDock new version (same zip), forum post.
    CKAN follows SpaceDock on its own.

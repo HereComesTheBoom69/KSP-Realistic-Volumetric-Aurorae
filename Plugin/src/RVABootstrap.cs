@@ -4,7 +4,7 @@ using System.Collections;
 using System.IO;
 using UnityEngine;
 
-[assembly: KSPAssembly("RealisticVolumetricAurorae", 1, 0)]
+[assembly: KSPAssembly("RealisticVolumetricAurorae", 1, 1)]
 
 namespace RVA
 {
@@ -22,10 +22,12 @@ namespace RVA
 
         /// <summary>Kit version — logged at startup and shown in the window title,
         /// so it is always obvious which DLL KSP actually loaded.</summary>
-        public const string Version = "1.0.0";
+        public const string Version = "1.0.1";
 
         const string LogPrefix = "[RVA]";
-        const string BundleRelativePath = "GameData/RealisticVolumetricAurorae/Bundles/rva_shaders";
+        const string ModRelativePath    = "GameData/RealisticVolumetricAurorae";
+        const string BundleFileName     = "rva_shaders";
+        const string BundleRelativePath = ModRelativePath + "/Bundles/" + BundleFileName;
 
         void Awake()
         {
@@ -54,8 +56,19 @@ namespace RVA
 
             if (!File.Exists(bundlePath))
             {
-                LogError($"Bundle not found at {bundlePath} — plugin disabled");
-                yield break;
+                // 1.0.1: the 1.0.0 zip shipped the bundle one folder too deep
+                // (Bundles/rva_shaders/rva_shaders). Tolerate any layout that keeps the
+                // file name, so a packaging slip or a hand-made install still works.
+                string found = FindBundleFallback();
+                if (found == null)
+                {
+                    LogError($"Bundle not found at {bundlePath} — plugin disabled");
+                    yield return null;                       // let the main-menu UI finish coming up
+                    ShowMissingBundleDialog(bundlePath);
+                    yield break;
+                }
+                LogWarn($"Bundle not at its expected path; using {found} instead (the install layout is off — the file should sit directly in Bundles/)");
+                bundlePath = found;
             }
 
             var bundleRequest = AssetBundle.LoadFromFileAsync(bundlePath);
@@ -96,6 +109,39 @@ namespace RVA
             ShaderLoaded = true;
             Log("Shaders ready");
             // Bundle is intentionally never unloaded — the shaders must stay alive.
+        }
+
+        /// <summary>Looks for the bundle anywhere under the mod folder when it is not at
+        /// the expected path. Returns the full path, or null.</summary>
+        static string FindBundleFallback()
+        {
+            try
+            {
+                string modDir = Path.Combine(KSPUtil.ApplicationRootPath, ModRelativePath);
+                if (!Directory.Exists(modDir)) return null;
+                string[] hits = Directory.GetFiles(modDir, BundleFileName, SearchOption.AllDirectories);
+                foreach (string h in hits)
+                    if (string.Equals(Path.GetFileName(h), BundleFileName, System.StringComparison.OrdinalIgnoreCase) && new FileInfo(h).Length > 0)
+                        return h;
+            }
+            catch (System.Exception e) { LogWarn($"Bundle search failed ({e.GetType().Name}: {e.Message})"); }
+            return null;
+        }
+
+        /// <summary>Tells the player, in game, why there is no aurora — a missing file is
+        /// an install problem they can fix themselves, if they know about it.</summary>
+        static void ShowMissingBundleDialog(string expectedPath)
+        {
+            try
+            {
+                string msg = "Realistic Volumetric Aurorae could not find its shader file and has disabled itself.\n\n" +
+                             "Missing: GameData/RealisticVolumetricAurorae/Bundles/rva_shaders\n\n" +
+                             "Re-extract the download and copy the whole RealisticVolumetricAurorae folder into GameData. " +
+                             "The file rva_shaders (no extension) must sit directly inside the Bundles folder.";
+                PopupDialog.SpawnPopupDialog(new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f),
+                    "RVA_MissingBundle", "Realistic Volumetric Aurorae", msg, "OK", true, HighLogic.UISkin);
+            }
+            catch (System.Exception e) { LogWarn($"Could not show the missing-bundle dialog ({e.GetType().Name}: {e.Message})"); }
         }
 
         static void Log(string m)      => Debug.Log($"{LogPrefix} {m}");
