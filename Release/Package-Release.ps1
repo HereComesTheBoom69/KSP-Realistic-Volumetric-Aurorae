@@ -1,5 +1,5 @@
-<#
-  Realistic Volumetric Aurorae (RVA) — release packager.
+﻿<#
+  Realistic Volumetric Aurorae (RVA) - release packager.
   Builds RealisticVolumetricAurorae-<version>.zip for SpaceDock / CKAN / GitHub releases
   from your Release-configuration DLL and the built shader bundle.
 
@@ -39,14 +39,14 @@ if ($FromGameData) {
 }
 if (-not $Bundle -or -not (Test-Path $Bundle -PathType Leaf)) { throw "Shader bundle not found or not a file: '$Bundle' (build it in Unity: RVA > Build Shader Bundle; pass the FILE AssetBundles\rva_shaders, not a folder)" }
 if (-not $Dll    -or -not (Test-Path $Dll    -PathType Leaf)) { throw "DLL not found or not a file: '$Dll' (build the Release configuration in Visual Studio; pass the FILE bin\Release\RealisticVolumetricAurorae.dll, not a folder)" }
-if ((Get-Item $Bundle).Length -lt 10KB) { throw "'$Bundle' is only $((Get-Item $Bundle).Length) bytes — that is not the shader bundle (did you pass the .manifest?)" }
-if ($Dll -match '\\Dev\\') { Write-Warning "The DLL path contains '\Dev\' — make sure you are packaging the RELEASE build, not the dev build." }
+if ((Get-Item $Bundle).Length -lt 10KB) { throw "'$Bundle' is only $((Get-Item $Bundle).Length) bytes - that is not the shader bundle (did you pass the .manifest?)" }
+if ($Dll -match '\\Dev\\') { Write-Warning "The DLL path contains '\Dev\' - make sure you are packaging the RELEASE build, not the dev build." }
 
 $verJson = Get-Content (Join-Path $src "RealisticVolumetricAurorae.version") -Raw | ConvertFrom-Json
 $version = "{0}.{1}.{2}" -f $verJson.VERSION.MAJOR, $verJson.VERSION.MINOR, $verJson.VERSION.PATCH
 $fileVer = (Get-Item $Dll).VersionInfo.FileVersion
 Write-Host "Packaging RVA $version   (DLL file version $fileVer, bundle $((Get-Item $Bundle).Length) bytes)"
-if ($fileVer -and -not $fileVer.StartsWith($version)) { Write-Warning "DLL file version $fileVer does not match the .version file ($version) — rebuild the DLL after bumping <Version> in the csproj." }
+if ($fileVer -and -not $fileVer.StartsWith($version)) { Write-Warning "DLL file version $fileVer does not match the .version file ($version) - rebuild the DLL after bumping <Version> in the csproj." }
 
 $stage = Join-Path ([System.IO.Path]::GetTempPath()) ("rva_release_" + [guid]::NewGuid().ToString("N"))
 $dst   = Join-Path $stage "GameData\RealisticVolumetricAurorae"
