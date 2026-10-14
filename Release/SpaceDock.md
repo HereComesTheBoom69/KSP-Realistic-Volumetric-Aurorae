@@ -25,7 +25,7 @@ A volumetric polar aurora for Kerbin: folding ribbons, rays and a storm cycle, r
 
 **Known limits:** the aurora lights nothing; Kerbin only in this release; the map-view instance has no cloud occlusion.
 
-Licence: CC BY-NC-SA 4.0, © 2026 HereComesTheBoom. Source: https://github.com/SkinnyThePimp/KSP-Realistic-Volumetric-Aurorae. Forum thread: <FORUM THREAD LINK>.
+Licence: CC BY-NC-SA 4.0, © 2026 HereComesTheBoom. Source: https://github.com/HereComesTheBoom69/KSP-Realistic-Volumetric-Aurorae. Forum thread: https://forum.kerbalspaceprogram.com/topic/231944-realistic-volumetric-aurorae-rva-visual-mod/.
 
 ## Fields
 - Game: Kerbal Space Program · KSP version: 1.12.5

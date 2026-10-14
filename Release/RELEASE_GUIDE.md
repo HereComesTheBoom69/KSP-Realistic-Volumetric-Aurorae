@@ -44,7 +44,7 @@ for the `.version` file, and CKAN reviewers like a repository link.
    paste the changelog (the *1.0.0* section of the README).
 5. Fill the `.version` file's two URLs and commit again:
    - `URL`: the raw version file, e.g.
-     `https://raw.githubusercontent.com/SkinnyThePimp/KSP-Realistic-Volumetric-Aurorae/main/GameData/RealisticVolumetricAurorae/RealisticVolumetricAurorae.version`
+     `https://raw.githubusercontent.com/HereComesTheBoom69/KSP-Realistic-Volumetric-Aurorae/main/GameData/RealisticVolumetricAurorae/RealisticVolumetricAurorae.version`
      (KSP-AVC / MiniAVC compare the installed file against this one).
    - `DOWNLOAD`: the SpaceDock page once it exists (step 2), or the GitHub
      release page.

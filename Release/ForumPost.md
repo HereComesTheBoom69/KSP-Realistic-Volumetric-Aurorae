@@ -20,8 +20,8 @@ A volumetric polar aurora for Kerbin. Not a texture: a raymarched glow layer dra
 - No dependencies. Scatterer-compatible (both camera modes)
 
 **Download**
-- SpaceDock: <SPACEDOCK LINK>
-- GitHub release: https://github.com/SkinnyThePimp/KSP-Realistic-Volumetric-Aurorae/releases/latest
+- SpaceDock: https://spacedock.info/mod/4689/Realistic%20Volumetric%20Aurorae
+- GitHub release: https://github.com/HereComesTheBoom69/KSP-Realistic-Volumetric-Aurorae/releases/latest
 - CKAN: `Realistic Volumetric Aurorae` (once indexed)
 
 **Install:** delete any older `GameData/RealisticVolumetricAurorae` (or the pre-release `GameData/SPVE_AuroraGlow`), then copy the `GameData/RealisticVolumetricAurorae` folder from the zip into your GameData. Nothing else.
@@ -37,7 +37,7 @@ A volumetric polar aurora for Kerbin. Not a texture: a raymarched glow layer dra
 **Known limits:** the aurora lights nothing (no ground, cloud or vessel light); the map-view instance has no cloud occlusion; settings are global, not per save.
 
 **Licence:** CC BY-NC-SA 4.0 (Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International), © 2026 HereComesTheBoom. The licence text ships in the download (`LICENSE.txt`).
-**Source:** https://github.com/SkinnyThePimp/KSP-Realistic-Volumetric-Aurorae (plugin C# and shader source, build instructions).
+**Source:** https://github.com/HereComesTheBoom69/KSP-Realistic-Volumetric-Aurorae (plugin C# and shader source, build instructions).
 
 **Changelog**
 - 1.0.0 — first public release.
