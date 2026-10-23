@@ -1,6 +1,7 @@
 // Realistic Volumetric Aurorae (RVA) — Copyright (c) 2026 HereComesTheBoom ("Realistic Volumetric Aurorae")
 // SPDX-License-Identifier: CC-BY-NC-SA-4.0  (see LICENSE.txt)
 using System.Collections;
+using System.Collections.Generic;
 using System.IO;
 using UnityEngine;
 
@@ -16,13 +17,21 @@ namespace RVA
     public class RVABootstrap : MonoBehaviour
     {
         public static Shader AuroraShader { get; private set; }
+        /// <summary>The shader build this plugin was written against: _RVAShaderBuild in Aurora_Shader.shader.
+        /// Bumped together with it whenever a uniform is added or renamed (1.1.0).</summary>
+        public const int ShaderBuild = 1110;
+        /// <summary>The build tag the loaded bundle reports (0 = a bundle from before the tag, -1 = unreadable).</summary>
+        public static int ShaderBuildFound { get; private set; }
+        public static bool ShaderBuildMatches => ShaderBuildFound == ShaderBuild;
         public static Shader BlitShader   { get; private set; }
         public static bool   ShaderLoaded { get; private set; }
-        public static AuroraSettings Settings = new AuroraSettings();
+        /// <summary>The GLOBAL settings (hotkey, render scale, map view …): identical on every
+        /// body's AuroraSettings; per-body values come from AuroraConfigs.Get(body).</summary>
+        public static AuroraSettings Settings => AuroraConfigs.Global;
 
         /// <summary>Kit version — logged at startup and shown in the window title,
         /// so it is always obvious which DLL KSP actually loaded.</summary>
-        public const string Version = "1.0.1";
+        public const string Version = "1.1.0";
 
         const string LogPrefix = "[RVA]";
         const string ModRelativePath    = "GameData/RealisticVolumetricAurorae";
@@ -35,14 +44,15 @@ namespace RVA
             DontDestroyOnLoad(gameObject);
 
             bool hadFile = File.Exists(AuroraSettings.FilePath);
-            Settings = AuroraSettings.Load(out string report);
+            AuroraConfigs.Load(out string report);
             Log("Settings: " + report);
+            Log("Bodies:\n" + AuroraConfigs.Describe());
             if (!hadFile)
             {
                 // First launch (or a CKAN install, which ships no settings.cfg so that
                 // upgrades never overwrite the user's): write the defaults so there is a
                 // file to edit. Updates leave it alone from here on.
-                try { Settings.Save(); Log($"Settings: wrote the default settings file to {AuroraSettings.FilePath}"); }
+                try { AuroraConfigs.Save(); Log($"Settings: wrote the default settings file to {AuroraSettings.FilePath}"); }
                 catch (System.Exception e) { LogWarn($"Settings: could not write {AuroraSettings.FilePath} ({e.GetType().Name}: {e.Message}) — running on built-in defaults"); }
             }
 
@@ -106,6 +116,12 @@ namespace RVA
                 LogWarn("No 'RVA/AuroraBlit' shader in bundle — the aurora will render at FULL resolution without tonemapping. " +
                         "Make sure AuroraBlit.shader AND its .meta are in the Unity project and rebuild the bundle.");
 
+            ShaderBuildFound = ReadShaderBuild(AuroraShader);
+            if (ShaderBuildMatches) Log($"Shader build {ShaderBuildFound} — matches the plugin");
+            else LogWarn($"SHADER / PLUGIN MISMATCH: the bundle reports shader build {ShaderBuildFound}, this DLL expects {ShaderBuild}. " +
+                         "They were built from different sources — rebuild the bundle (Unity) and the DLL from the same kit. " +
+                         "Until then features added on either side are inert (settings the shader does not know, uniforms the plugin does not set).");
+
             ShaderLoaded = true;
             Log("Shaders ready");
             // Bundle is intentionally never unloaded — the shaders must stay alive.
@@ -144,6 +160,19 @@ namespace RVA
             catch (System.Exception e) { LogWarn($"Could not show the missing-bundle dialog ({e.GetType().Name}: {e.Message})"); }
         }
 
+        static int ReadShaderBuild(Shader sh)
+        {
+            if (sh == null) return -1;
+            try
+            {
+                var m = new Material(sh);
+                int v = m.HasProperty("_RVAShaderBuild") ? Mathf.RoundToInt(m.GetFloat("_RVAShaderBuild")) : 0;
+                UnityEngine.Object.Destroy(m);
+                return v;
+            }
+            catch { return -1; }
+        }
+
         static void Log(string m)      => Debug.Log($"{LogPrefix} {m}");
         static void LogWarn(string m)  => Debug.LogWarning($"{LogPrefix} {m}");
         static void LogError(string m) => Debug.LogError($"{LogPrefix} {m}");
@@ -151,27 +180,35 @@ namespace RVA
 
 
     /// <summary>
-    /// Runs every time the Flight scene loads: builds the aurora for the
-    /// target body, applies the settings, opens the live-tuning window on
-    /// Modifier + toggleKey, and tears everything down when the scene ends.
+    /// Runs every time the Flight scene loads: builds the local-space aurora of the
+    /// body the vessel is at (rebuilt on SOI change / vessel switch), a self-driven
+    /// scaled-space aurora for every other configured body (1.1.0: Jool's aurora from
+    /// Laythe, the map view zoomed to another planet), applies the settings, opens the
+    /// live-tuning window on Modifier + toggleKey, and tears everything down when the
+    /// scene ends.
     /// </summary>
     [KSPAddon(KSPAddon.Startup.Flight, false)]
     public class RVAFlightSetup : MonoBehaviour
     {
         const string LogPrefix = "[RVA:Flight]";
-
-        const string TargetBodyName = "Kerbin";   // per-planet configs come later
         const float  UnityTestRadius = 10f;       // the Unity test planet's radius; worldScale = radius / this
 
-        public AuroraSettings       Settings   => RVABootstrap.Settings;
+        /// <summary>Settings of the body the LOCAL aurora is built around (the global settings when there is none).</summary>
+        public AuroraSettings       Settings   => body != null && AuroraConfigs.Has(body.bodyName) ? AuroraConfigs.Get(body.bodyName) : AuroraConfigs.Global;
+        public string               BodyName   => body != null ? body.bodyName : null;
+        public CelestialBody        Body       => body;
         public AuroraRenderer       Renderer   => renderer;
         public AuroraStormScheduler Storm      => storm;
         public AuroraMeanderTexture Meander    => meander;
         public ScaledAuroraDriver   Scaled     => scaled;
         public AuroraDiagnostics    Diag       => diag;
+        public AuroraVesselLight    VesselLight => vesselLight;
         public float                Radius     => radius;
         public float                WorldScale => worldScale;
         public bool                 Built      => auroraGO != null;
+        /// <summary>The self-driven scaled-space aurorae of the other bodies, by body name.</summary>
+        public IEnumerable<ScaledAuroraInstance> Distant => distant.Values;
+        public ScaledAuroraInstance DistantFor(string b) => b != null && distant.TryGetValue(b, out var d) ? d : null;
 
         GameObject           auroraGO;
         Material             material;
@@ -182,7 +219,14 @@ namespace RVA
         AuroraTuningWindow   window;
         ScaledAuroraDriver   scaled;
         AuroraDiagnostics    diag;
+        AuroraVesselLight    vesselLight;
         float radius, worldScale;
+
+        readonly Dictionary<string, ScaledAuroraInstance> distant = new Dictionary<string, ScaledAuroraInstance>(System.StringComparer.OrdinalIgnoreCase);
+        readonly List<GameObject> distantObjects = new List<GameObject>();
+        bool          ready, subscribed;
+        CelestialBody pendingBody;
+        int           bodyPoll;
 
         IEnumerator Start()
         {
@@ -196,21 +240,102 @@ namespace RVA
             }
             while (FlightGlobals.Bodies == null || FlightGlobals.Bodies.Count == 0)
                 yield return null;
+            waitFrames = 0;
+            while (CurrentMainBody() == null && ++waitFrames < 600)
+                yield return null;
 
-            CelestialBody body = null;
+            ready = true;
+            Rebuild(CurrentMainBody());
+
+            GameEvents.onVesselSOIChanged.Add(OnSOIChanged);
+            GameEvents.onVesselChange.Add(OnVesselChange);
+            subscribed = true;
+
+            // Live tuning window (Modifier + toggleKey) — on this object, so it outlives body changes
+            window = gameObject.AddComponent<AuroraTuningWindow>();
+            window.owner = this;
+            Log($"Flight setup complete — tuning window ready, press {AuroraConfigs.Global.toggleKey} with the modifier key (Alt) held");
+        }
+
+        static CelestialBody CurrentMainBody()
+        {
+            var v = FlightGlobals.ActiveVessel;
+            if (v != null && v.mainBody != null) return v.mainBody;
+            return FlightGlobals.currentMainBody;
+        }
+
+        static CelestialBody FindBody(string name)
+        {
+            if (FlightGlobals.Bodies == null) return null;
             foreach (var b in FlightGlobals.Bodies)
-                if (b != null && b.bodyName == TargetBodyName) { body = b; break; }
-            if (body == null) { LogError($"Body '{TargetBodyName}' not found"); yield break; }
+                if (b != null && string.Equals(b.bodyName, name, System.StringComparison.OrdinalIgnoreCase)) return b;
+            return null;
+        }
 
-            Log($"Found {body.bodyName}: radius={body.Radius}m, transform={body.transform.name}");
-            this.body = body;
-            BuildAurora(body);
-            Log("Flight setup complete");
+        void OnSOIChanged(GameEvents.HostedFromToAction<Vessel, CelestialBody> a)
+        {
+            if (a.host != null && a.host == FlightGlobals.ActiveVessel) RequestRebuild(a.to);
+        }
+        void OnVesselChange(Vessel v) { if (v != null) RequestRebuild(v.mainBody); }
+        void RequestRebuild(CelestialBody b) { if (b != null && b != body) pendingBody = b; }
+
+        /// <summary>Tear everything down and build for a new main body: the local aurora for it (if
+        /// configured) and a scaled-space instance for every other configured body.</summary>
+        void Rebuild(CelestialBody newBody)
+        {
+            TearDownLocal();
+            TearDownDistant();
+            body = newBody;
+            if (body == null) { Log("No main body yet — nothing built"); return; }
+
+            if (AuroraConfigs.Has(body.bodyName))
+            {
+                Log($"Main body {body.bodyName}: radius={body.Radius}m — building the local aurora");
+                BuildAurora(body);
+            }
+            else Log($"Main body {body.bodyName}: no RVA_AURORA config — no local aurora");
+
+            BuildDistant();
+        }
+
+        void BuildDistant()
+        {
+            if (distant.Count > 0) return;                   // already built (ApplySettings builds them too)
+            if (!AuroraConfigs.Global.mapView) return;      // the scaled-space renderers are one switch (map view / tracking station / other bodies)
+            foreach (var name in AuroraConfigs.Bodies)
+            {
+                if (body != null && string.Equals(name, body.bodyName, System.StringComparison.OrdinalIgnoreCase)) continue;
+                var cb = FindBody(name);
+                if (cb == null) { Log($"  {name}: configured but not in this solar system — skipped"); continue; }
+                if (cb.scaledBody == null) continue;
+                var go = new GameObject($"RVA_distant_{name}");     // root-level: its own storm / LUT; destroyed with the scene or on rebuild
+                var inst = go.AddComponent<ScaledAuroraInstance>();
+                inst.occluder = body;                                  // the body we are at hides it
+                inst.Build(cb, AuroraConfigs.Get(name), withLocal: true);
+                distant[name] = inst;
+                distantObjects.Add(go);
+            }
+        }
+
+        void TearDownDistant()
+        {
+            foreach (var inst in distant.Values) if (inst != null) inst.Shutdown();
+            foreach (var go in distantObjects) if (go != null) Destroy(go);
+            distant.Clear();
+            distantObjects.Clear();
+        }
+
+        void TearDownLocal()
+        {
+            if (scaled != null) { scaled.Shutdown(); scaled = null; }
+            if (auroraGO != null) { Destroy(auroraGO); auroraGO = null; }
+            if (material != null) { Destroy(material); material = null; }
+            renderer = null; storm = null; meander = null; diag = null; vesselLight = null;
         }
 
         void BuildAurora(CelestialBody body)
         {
-            var s = Settings;
+            var s = AuroraConfigs.Get(body.bodyName);
             radius     = (float)body.Radius;
             worldScale = radius / UnityTestRadius;             // 60000 for Kerbin
 
@@ -248,7 +373,7 @@ namespace RVA
             renderer.blitShader       = RVABootstrap.BlitShader;
             Log("  AuroraRenderer attached");
 
-            // Storm scheduler — Unity-scale numbers × worldScale, seeded per save
+            // Storm scheduler — Unity-scale numbers × worldScale, seeded per save and body
             storm = auroraGO.AddComponent<AuroraStormScheduler>();
             storm.auroraMaterial = material;
             storm.worldScale     = worldScale;
@@ -263,6 +388,15 @@ namespace RVA
             scaled.Build(body, material, null, s);
             Log("  Scaled-space (map view) aurora attached");
 
+            // The aurora's light on the vessel (1.1.0): up to four lights on the vessel's layers,
+            // from the directions the ribbons' light comes from. Off until the settings switch it on.
+            vesselLight = auroraGO.AddComponent<AuroraVesselLight>();
+            vesselLight.planet         = body.transform;
+            vesselLight.auroraMaterial = material;
+            vesselLight.meander        = meander;
+            vesselLight.planetRadius   = radius;
+            Log("  AuroraVesselLight attached");
+
             // Diagnostics: logs hitches, GC runs, animation / material jumps, origin
             // shifts and LUT stalls to KSP.log, once each, with timestamps (v3.19b)
             diag = auroraGO.AddComponent<AuroraDiagnostics>();
@@ -273,11 +407,6 @@ namespace RVA
             Log("  Diagnostics attached");
 
             ApplySettings();
-
-            // Live tuning window (Modifier + toggleKey)
-            window = auroraGO.AddComponent<AuroraTuningWindow>();
-            window.owner = this;
-            Log($"  Tuning window ready — press {s.toggleKey} with the modifier key (Alt) held");
         }
 
         /// <summary>Every per-look value in Settings → a material. radiusUnits = the planet radius in
@@ -294,12 +423,18 @@ namespace RVA
             material.SetFloat("_Spikiness",      s.spikiness);
             material.SetFloat("_SpikeThreshold", s.spikeThreshold);
             material.SetFloat("_GreenSpikes",    s.greenSpikes);
+            var bn = AuroraBlueNoise.Texture;                                                 // 1.1.0: blue-noise sample offsets
+            if (bn != null) material.SetTexture("_BlueNoise", bn);
+            material.SetFloat("_BlueNoiseOn",    bn != null ? 1f : 0f);
             material.SetFloat("_CloudLightBlur", 0f);             // v3.23: the shader's cloud-light / irradiance terms stay off
             material.SetFloat("_CloudTopAlt",    s.cloudTopKm * 1000f * unitsPerMetre);
             material.SetFloat("_StepLength",     s.stepLength);
-            material.SetFloat("_StepNear",       Mathf.Clamp(s.nearStepScale, 0.1f, 1f));
-            material.SetFloat("_MaxSteps",       s.maxSteps);
+            material.SetFloat("_StepNear",       Mathf.Clamp(s.nearStepScale, 0.05f, 1f));
+            material.SetFloat("_StepGrowth",     Mathf.Clamp(s.stepGrowth, 0f, 0.2f));
+            material.SetFloat("_StepFarMul",     Mathf.Clamp(s.stepFarMul, 1f, 16f));
+            material.SetFloat("_MaxSteps",       Mathf.Clamp(s.maxSteps, 8f, 512f));
             material.SetFloat("_Jitter",         s.jitter);
+            material.SetFloat("_StepFilter",     Mathf.Clamp(s.stepFilter, 0.2f, 1.5f));   // 1.1.0
             material.SetFloat("_DaylightFade",   s.daylightFade);
             material.SetFloat("_Brightness",     s.brightness);
             material.SetFloat("_GreenTop",       s.greenTop);
@@ -331,6 +466,16 @@ namespace RVA
             material.SetColor("_ColorHigh", s.colorHigh);
         }
 
+        /// <summary>1.1.0: the per-body performance options → a renderer (any of a body's three).</summary>
+        public static void PushRendererPerf(AuroraRenderer r, AuroraSettings s)
+        {
+            if (r == null) return;
+            r.temporal        = s.temporalAccumulation;
+            r.temporalWeight  = Mathf.Clamp(s.temporalWeight, 0f, 0.99f);
+            r.temporalUpscale = Mathf.Clamp(s.temporalUpscale, 1f, 4f);
+            r.temporalClamp   = Mathf.Clamp(s.temporalClamp, 0.1f, 8f);
+        }
+
         /// <summary>The storm scheduler's base / peak values from Settings (unit-free: it multiplies by its worldScale).</summary>
         public static void ConfigureStorm(AuroraStormScheduler storm, AuroraSettings s)
         {
@@ -345,20 +490,48 @@ namespace RVA
             // centre / spacing / width and the outer arcs' visibility every frame
             storm.driveOval          = true;
             storm.baseLatCenter      = s.latCenter;
-            storm.stormLatCenter     = Mathf.Clamp(s.latCenter - s.ovalEquatorward, 0.05f, 0.98f);
             storm.baseBandSpacing    = s.bandSpacing * Mathf.Max(s.ovalQuietSpread, 0f);
-            storm.stormBandSpacing   = s.bandSpacing * Mathf.Max(s.ovalStormSpread, 0f);
+            if (s.stormToEquator)
+            {
+                // 1.1.0: at peak the arcs run from the quiet oval's poleward arc (which stays put) down to
+                // stormReach. The shader places them at centre + 0.04 × spacing, centre and centre − 0.05 ×
+                // spacing, so a span D needs spacing D / 0.09 with the centre 0.05 / 0.09 of the way up from
+                // the bottom.
+                float top   = Mathf.Clamp01(s.latCenter + 0.04f * storm.baseBandSpacing);
+                float reach = Mathf.Clamp(s.stormReach, 0f, top);
+                float span  = Mathf.Max(top - reach, 0.001f);
+                storm.stormLatCenter   = reach + span * (0.05f / 0.09f);
+                storm.stormBandSpacing = span / 0.09f;
+            }
+            else
+            {
+                storm.stormLatCenter   = Mathf.Clamp(s.latCenter - s.ovalEquatorward, 0.05f, 0.98f);
+                storm.stormBandSpacing = s.bandSpacing * Mathf.Max(s.ovalStormSpread, 0f);
+            }
+            storm.baseFoldStrength   = s.foldStrength;
+            storm.stormFoldStrength  = s.foldStrength * (s.stormToEquator ? Mathf.Max(s.stormFoldGain, 0f) : 1f);
             storm.baseLatWidth       = s.latWidth;
             storm.stormLatWidth      = s.latWidth * (1f + Mathf.Max(s.ovalStormWiden, 0f));
             storm.arc2Threshold      = Mathf.Clamp01(s.arc2Appears);
             storm.arc3Threshold      = Mathf.Clamp01(s.arc3Appears);
         }
 
-        /// <summary>Push every value in Settings to the material / components. Cheap; call on any change.</summary>
+        /// <summary>Push every value in Settings to the local aurora's material / components, and each
+        /// other body's settings to its scaled instance. Cheap; call on any change.</summary>
         public void ApplySettings()
         {
-            var s = Settings;
+            var g = AuroraConfigs.Global;
+
+            // the scaled-space renderers follow the one switch at runtime
+            if (ready)
+            {
+                if (g.mapView && distant.Count == 0) BuildDistant();
+                else if (!g.mapView && distant.Count > 0) TearDownDistant();
+            }
+            foreach (var kv in distant) if (kv.Value != null) kv.Value.Apply(AuroraConfigs.Get(kv.Key));
+
             if (material == null) return;
+            var s = Settings;
 
             if (diag != null) { diag.active = s.diagnostics; diag.NoteApplySettings(); }
             PushMaterial(s, material, radius, 1f);
@@ -375,6 +548,7 @@ namespace RVA
                 renderer.sceneDepthOcclusion = s.sceneDepthOcclusion;
                 renderer.smoothing      = Mathf.Clamp01(s.upsampleSmoothing);
                 renderer.edgeAware      = s.edgeAwareUpsample;
+                PushRendererPerf(renderer, s);
             }
 
             if (meander != null)
@@ -385,11 +559,37 @@ namespace RVA
 
             if (storm != null) ConfigureStorm(storm, s);
 
+            if (vesselLight != null)
+            {
+                vesselLight.lightOn    = s.vesselLight;
+                vesselLight.intensity  = Mathf.Max(s.vesselLightIntensity, 0f);
+                vesselLight.pixelLight = s.vesselLightPixel;
+                vesselLight.lightCount = s.vesselLightCount >= 4 ? 4 : s.vesselLightCount >= 2 ? 2 : 1;
+                vesselLight.samples    = Mathf.Clamp(s.vesselLightSamples, 16, 128);
+                vesselLight.smoothing  = Mathf.Clamp(s.vesselLightSmoothing, 0f, 5f);
+            }
+
             if (scaled != null) scaled.Apply(s);
         }
 
         void LateUpdate()
         {
+            if (!ready) return;
+
+            // body change requested by an event, or noticed by polling (belt and braces)
+            if (pendingBody == null && ++bodyPoll >= 60)
+            {
+                bodyPoll = 0;
+                var now = CurrentMainBody();
+                if (now != null && now != body) pendingBody = now;
+            }
+            if (pendingBody != null)
+            {
+                var nb = pendingBody; pendingBody = null;
+                Log($"Main body changed: {(body != null ? body.bodyName : "(none)")} → {nb.bodyName}");
+                Rebuild(nb);
+            }
+
             if (material == null || body == null) return;
             var s = Settings;
 
@@ -415,23 +615,38 @@ namespace RVA
             // planet — hand the aurora to the scaled instance for as long as that lasts
             if (scaled != null) scaled.SetActive(s.mapView && MapView.MapIsEnabled);
 
-            // Sun direction for the daylight fade and the night-only irradiance
+            // Sun direction for the daylight fade and the night-only irradiance. w is the
+            // fade's weight: 1 in sunlight, down to 0 while the body's parent eclipses the
+            // sun (Laythe behind Jool, ~1 h per orbit) — then the aurora shows all over.
             CelestialBody sun = Planetarium.fetch != null ? Planetarium.fetch.Sun : null;
             Vector3 sunDir = Vector3.zero;
             bool haveSun = sun != null && sun != body;
             if (haveSun)
             {
                 sunDir = (sun.transform.position - body.transform.position).normalized;
-                material.SetVector("_SunDir", new Vector4(sunDir.x, sunDir.y, sunDir.z, 1f));
+                float cover = s.eclipses ? AuroraEclipse.Coverage(body, sun) : 0f;
+                material.SetVector("_SunDir", new Vector4(sunDir.x, sunDir.y, sunDir.z, 1f - cover));
+                bool dark = cover > 0.5f;
+                if (dark != eclipsed)
+                {
+                    eclipsed = dark;
+                    Log($"{body.bodyName}: {(dark ? $"in {body.referenceBody.bodyName}'s shadow — daylight fade lifted" : "back in sunlight — daylight fade on")}");
+                }
             }
             else material.SetVector("_SunDir", Vector4.zero);
         }
+        bool eclipsed;
 
         void OnDestroy()
         {
-            if (scaled != null) scaled.Shutdown();
-            if (auroraGO != null) Destroy(auroraGO);
-            if (material != null) Destroy(material);
+            if (subscribed)
+            {
+                GameEvents.onVesselSOIChanged.Remove(OnSOIChanged);
+                GameEvents.onVesselChange.Remove(OnVesselChange);
+                subscribed = false;
+            }
+            TearDownDistant();
+            TearDownLocal();
         }
 
         static void Log(string m)      => Debug.Log($"{LogPrefix} {m}");
@@ -445,8 +660,8 @@ namespace RVA
     /// material every frame (same storm, animation time, sun and sliders) and
     /// rescales the world-unit values by 1 / ScaledSpace.ScaleFactor; in the
     /// tracking station the material is driven directly. No EVE occlusion (there
-    /// is no volumetric cloud buffer in scaled space) and no depth occlusion (the
-    /// analytic planet hides the far side).
+    /// is no volumetric cloud buffer in scaled space); depth occlusion against the
+    /// scaled camera's depth, so another body in front hides the aurora (1.1.0).
     /// </summary>
     public class ScaledAuroraDriver : MonoBehaviour
     {
@@ -491,7 +706,7 @@ namespace RVA
             scaledRenderer.syncFrom            = source;
             scaledRenderer.syncScale           = 1f / ScaledSpace.ScaleFactor;
             scaledRenderer.cloudOcclusion      = false;
-            scaledRenderer.sceneDepthOcclusion = false;
+            scaledRenderer.sceneDepthOcclusion = true;    // 1.1.0: another scaled body in front (Laythe before Jool) cuts the march
             scaledRenderer.edgeAware           = false;
             scaledRenderer.renderingEnabled    = false;
             Apply(s);
@@ -506,6 +721,7 @@ namespace RVA
             scaledRenderer.flipY          = s.flipY;
             scaledRenderer.compositeEvent = s.mapCompositeEvent;
             scaledRenderer.smoothing      = Mathf.Clamp01(s.upsampleSmoothing);
+            RVAFlightSetup.PushRendererPerf(scaledRenderer, s);
         }
 
         public void SetActive(bool on)
@@ -529,27 +745,20 @@ namespace RVA
 
 
     /// <summary>
-    /// Tracking station: no local aurora to follow, so this builds a scaled-space
-    /// material of its own (meander texture, storm scheduler, sun direction) and
-    /// hands it to a ScaledAuroraDriver. Same settings file, no tuning window.
+    /// Tracking station: no local aurora anywhere, so every configured body gets a
+    /// self-driven scaled-space aurora (ScaledAuroraInstance). Same settings, no window.
     /// </summary>
     [KSPAddon(KSPAddon.Startup.TrackingStation, false)]
     public class RVATrackingSetup : MonoBehaviour
     {
         const string LogPrefix = "[RVA:Tracking]";
-        const string TargetBodyName = "Kerbin";
 
-        CelestialBody        body;
-        Material             material;
-        AuroraMeanderTexture meander;
-        AuroraStormScheduler storm;
-        ScaledAuroraDriver   scaled;
-        float                radiusUnits;
+        readonly List<ScaledAuroraInstance> instances = new List<ScaledAuroraInstance>();
+        readonly List<GameObject> objects = new List<GameObject>();
 
         IEnumerator Start()
         {
-            var s = RVABootstrap.Settings;
-            if (!s.mapView) yield break;
+            if (!AuroraConfigs.Global.mapView) yield break;
 
             int waitFrames = 0;
             while (!RVABootstrap.ShaderLoaded)
@@ -560,58 +769,26 @@ namespace RVA
             while (FlightGlobals.Bodies == null || FlightGlobals.Bodies.Count == 0)
                 yield return null;
 
-            foreach (var b in FlightGlobals.Bodies)
-                if (b != null && b.bodyName == TargetBodyName) { body = b; break; }
-            if (body == null || body.scaledBody == null) { Log($"Body '{TargetBodyName}' (scaled) not found"); yield break; }
-
-            float unitsPerMetre = 1f / ScaledSpace.ScaleFactor;
-            radiusUnits = (float)body.Radius * unitsPerMetre;
-
-            material = new Material(RVABootstrap.AuroraShader);
-            material.SetFloat("_SphereRadius", radiusUnits);
-            material.SetFloat("_AltBase",      radiusUnits * s.altBaseFraction);
-            material.SetFloat("_AltTop",       radiusUnits * (s.altBaseFraction + s.altTopFraction));
-            material.SetFloat("_Activity",     s.baseActivity);
-            material.SetFloat("_AnimSpeed",    s.baseAnimSpeed);
-            material.SetFloat("_AnimTime",     0f);
-            material.SetVector("_PlanetCenter", body.scaledBody.transform.position);
-            RVAFlightSetup.PushMaterial(s, material, radiusUnits, unitsPerMetre);
-
-            meander = gameObject.AddComponent<AuroraMeanderTexture>();
-            meander.auroraMaterial = material;
-            meander.resolution     = Mathf.Clamp(s.meanderResolution, 32, 1024);
-            meander.threaded       = s.meanderThreaded;
-
-            storm = gameObject.AddComponent<AuroraStormScheduler>();
-            storm.auroraMaterial = material;
-            storm.worldScale     = radiusUnits / 10f;
-            int seed = (HighLogic.CurrentGame != null ? HighLogic.CurrentGame.Seed : 0) ^ body.bodyName.GetHashCode();
-            storm.Seed(seed);
-            RVAFlightSetup.ConfigureStorm(storm, s);
-
-            scaled = gameObject.AddComponent<ScaledAuroraDriver>();
-            scaled.Build(body, null, material, s);
-            scaled.SetActive(true);
-            Log($"Tracking station aurora ready ({body.bodyName}, radius {radiusUnits:F1} scaled units)");
-        }
-
-        void LateUpdate()
-        {
-            if (material == null || body == null) return;
-            CelestialBody sun = Planetarium.fetch != null ? Planetarium.fetch.Sun : null;
-            if (sun != null && sun != body && sun.scaledBody != null)
+            foreach (var name in AuroraConfigs.Bodies)
             {
-                Vector3 d = (sun.scaledBody.transform.position - body.scaledBody.transform.position).normalized;
-                material.SetVector("_SunDir", new Vector4(d.x, d.y, d.z, 1f));
+                CelestialBody body = null;
+                foreach (var b in FlightGlobals.Bodies)
+                    if (b != null && string.Equals(b.bodyName, name, System.StringComparison.OrdinalIgnoreCase)) { body = b; break; }
+                if (body == null || body.scaledBody == null) { Log($"Body '{name}' (scaled) not found — skipped"); continue; }
+                var go = new GameObject($"RVA_tracking_{name}");
+                var inst = go.AddComponent<ScaledAuroraInstance>();
+                inst.Build(body, AuroraConfigs.Get(name), withLocal: false);
+                instances.Add(inst);
+                objects.Add(go);
             }
-            else material.SetVector("_SunDir", Vector4.zero);
+            Log($"Tracking station: {instances.Count} aurora(e) ready");
         }
 
         void OnDestroy()
         {
-            // the renderer first (it references the material in its command buffers), then the material
-            if (scaled != null) scaled.Shutdown();
-            if (material != null) Destroy(material);
+            foreach (var i in instances) if (i != null) i.Shutdown();
+            foreach (var go in objects) if (go != null) Destroy(go);
+            instances.Clear(); objects.Clear();
         }
 
         static void Log(string m) => Debug.Log($"{LogPrefix} {m}");

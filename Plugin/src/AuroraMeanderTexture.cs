@@ -16,12 +16,19 @@ using Debug = UnityEngine.Debug;
 ///   R = meander shift + 0.5       (shift is ±0.225 in latNorm units)
 ///   G = flare 0..1                (shader: flare = lerp(0.7, 1.6, G))
 ///   B = width noise 0..1          (shader: width × lerp(1-var, 1+var, B))
-///   A = unused
+///   A = where the folded ribbon is in this longitude column (latNorm toward the
+///       set's pole; 1.1.0): the presence-weighted mean latitude over the fold's
+///       reach (AuroraNoise.RibbonPresence), with the amount of ribbon the column
+///       holds kept beside it in a CPU-only array (1 = one straight crossing).
+///       Not read by the shader (its march finds the fold per sample); the vessel
+///       light reads both to know where the ribbons are without evaluating the
+///       fold itself.
 ///
 /// Refresh: in play mode a worker thread bakes the WHOLE texture (all 6 rows
 /// at one animation time) continuously, and the newest bake is uploaded every
 /// frame — so the meander moves as smoothly as everything else in the shader.
-/// A 256-texel bake is ~2-4 ms of CPU, which the worker hides entirely.
+/// A 256-texel bake is ~2-4 ms of CPU (about twice that with the ribbon latitudes of
+/// 1.1.0), which the worker hides entirely.
 /// Without the thread (editor, or threaded = false) rowsPerFrame rows are
 /// recomputed per frame on the main thread, the way v3 did it.
 ///
@@ -47,11 +54,20 @@ public class AuroraMeanderTexture : MonoBehaviour
 
     // Must match the shader's auroraField()
     static readonly float[] BandSeedOffsets = { 0.00f, 73.41f, 218.93f };
+    static readonly float[] BandLatOffsets  = { 0.00f, -0.05f, +0.04f };
     const int Rows = 6;
+
+    /// <summary>Everything a bake needs besides the longitude: the animation time and the
+    /// band's placement and folds as the material has them this frame (1.1.0: the A channel).</summary>
+    struct BakeParams
+    {
+        public float t, noiseScale, latCenter, spacing, foldStrength, foldScale, independence;
+    }
 
     Texture2D tex;
     float[]   front;        // the buffer that was uploaded last
     float[]   back;         // the buffer the worker (or the row loop) writes
+    float[]   wFront, wBack; // the ribbon weight per texel (res × Rows), CPU only, swapped with front / back
     int       nextRow;
 
     // ---- worker thread ------------------------------------------------------
@@ -59,7 +75,7 @@ public class AuroraMeanderTexture : MonoBehaviour
     AutoResetEvent kick;
     volatile bool  running;
     volatile bool  ready;          // worker: "back holds a finished bake"
-    volatile float reqTime, reqNoiseScale;
+    BakeParams     reqParams;          // written by the main thread before each kick, read by the worker after it (the event is the fence)
     volatile float lastBakeMs;
     volatile string workerError;
     bool  workerFailed;
@@ -96,12 +112,15 @@ public class AuroraMeanderTexture : MonoBehaviour
         tex.filterMode = FilterMode.Bilinear;
         tex.hideFlags  = HideFlags.HideAndDontSave;
 
-        front = new float[resolution * Rows * 4];
-        back  = new float[resolution * Rows * 4];
+        front  = new float[resolution * Rows * 4];
+        back   = new float[resolution * Rows * 4];
+        wFront = new float[resolution * Rows];
+        wBack  = new float[resolution * Rows];
         for (int i = 0; i < front.Length; i++) { front[i] = 0.5f; back[i] = 0.5f; }   // neutral
+        for (int i = 0; i < wFront.Length; i++) { wFront[i] = 1f; wBack[i] = 1f; }
 
         // First bake synchronously so the first frame is already right
-        BakeAll(front, resolution, CurrentTime(), CurrentNoiseScale());
+        BakeAll(front, wFront, resolution, CurrentParams());
         nextRow = 0;
         Upload();
         Bind();
@@ -119,12 +138,12 @@ public class AuroraMeanderTexture : MonoBehaviour
         if (auroraMaterial == null) return;
         if (tex == null || tex.width != Mathf.Clamp(resolution, 32, 1024)) { Allocate(); return; }
 
-        float t = CurrentTime(), ns = CurrentNoiseScale();
+        BakeParams bp = CurrentParams();
         bool useThread = threaded && Application.isPlaying && !workerFailed;
 
         if (useThread)
         {
-            if (worker == null) StartWorker(t, ns);
+            if (worker == null) StartWorker(bp);
             else if (!worker.IsAlive && running)
             {
                 // the worker died (exception): fall back to the main thread, say so once
@@ -137,10 +156,11 @@ public class AuroraMeanderTexture : MonoBehaviour
             {
                 // consume the finished bake, then hand the worker the other buffer
                 var tmp = front; front = back; back = tmp;
+                var tmpW = wFront; wFront = wBack; wBack = tmpW;
                 ready = false;
                 Upload();
                 CountUpload();
-                reqTime = t; reqNoiseScale = ns;
+                reqParams = bp;
                 kick.Set();
             }
         }
@@ -150,7 +170,7 @@ public class AuroraMeanderTexture : MonoBehaviour
             int rows = Mathf.Clamp(rowsPerFrame, 1, Rows);
             for (int k = 0; k < rows; k++)
             {
-                BakeRow(front, resolution, nextRow, t, ns);
+                BakeRow(front, wFront, resolution, nextRow, bp);
                 nextRow = (nextRow + 1) % Rows;
             }
             Upload();
@@ -168,13 +188,13 @@ public class AuroraMeanderTexture : MonoBehaviour
     }
 
     // ---- worker -------------------------------------------------------------
-    void StartWorker(float t, float ns)
+    void StartWorker(BakeParams bp)
     {
         StopWorker();
         kick    = new AutoResetEvent(false);
         running = true;
         ready   = false;
-        reqTime = t; reqNoiseScale = ns;
+        reqParams = bp;
         worker  = new Thread(WorkerLoop) { IsBackground = true, Name = "RealisticVolumetricAurorae meander LUT", Priority = System.Threading.ThreadPriority.BelowNormal };
         worker.Start();
         kick.Set();                                   // first bake straight away
@@ -200,10 +220,10 @@ public class AuroraMeanderTexture : MonoBehaviour
             {
                 kick.WaitOne();
                 if (!running) break;
-                float[] dst = back;                   // the main thread swapped before kicking
+                float[] dst = back, wdst = wBack;     // the main thread swapped before kicking
                 int res = dst.Length / (Rows * 4);
                 sw.Restart();
-                BakeAll(dst, res, reqTime, reqNoiseScale);
+                BakeAll(dst, wdst, res, reqParams);
                 sw.Stop();
                 lastBakeMs = (float)sw.Elapsed.TotalMilliseconds;
                 ready = true;                         // volatile: publishes dst's contents
@@ -216,17 +236,18 @@ public class AuroraMeanderTexture : MonoBehaviour
     }
 
     // ---- baking (pure, thread-safe) -------------------------------------------
-    static void BakeAll(float[] dst, int res, float t, float noiseScale)
+    static void BakeAll(float[] dst, float[] wdst, int res, BakeParams bp)
     {
-        for (int r = 0; r < Rows; r++) BakeRow(dst, res, r, t, noiseScale);
+        for (int r = 0; r < Rows; r++) BakeRow(dst, wdst, res, r, bp);
     }
 
-    static void BakeRow(float[] dst, int res, int row, float t, float noiseScale)
+    static void BakeRow(float[] dst, float[] wdst, int res, int row, BakeParams bp)
     {
         int band = row / 2;
         int hemi = row % 2;
         float seed        = BandSeedOffsets[band];
         float seedMeander = seed + (hemi == 1 ? 500f : 0f);   // south oval is independent
+        float cLat        = bp.latCenter + BandLatOffsets[band] * bp.spacing;
         int   baseIdx     = row * res * 4;
         float invRes      = 1f / res;
 
@@ -235,11 +256,58 @@ public class AuroraMeanderTexture : MonoBehaviour
             // texel centre → longitude in -π..π (shader: atan2(z, x) / 2π + 0.5)
             float lon = ((i + 0.5f) * invRes - 0.5f) * Mathf.PI * 2f;
             int o = baseIdx + i * 4;
-            dst[o]     = AuroraNoise.BandShift(lon, t, seedMeander, noiseScale) + 0.5f;
-            dst[o + 1] = AuroraNoise.Flare01(lon, t, seed, noiseScale);
-            dst[o + 2] = AuroraNoise.WidthNoise01(lon, t, seedMeander, noiseScale);
-            dst[o + 3] = 0f;
+            float shift = AuroraNoise.BandShift(lon, bp.t, seedMeander, bp.noiseScale);
+            dst[o]     = shift + 0.5f;
+            dst[o + 1] = AuroraNoise.Flare01(lon, bp.t, seed, bp.noiseScale);
+            dst[o + 2] = AuroraNoise.WidthNoise01(lon, bp.t, seedMeander, bp.noiseScale);
+            // where the folded ribbon is in this column and how much of it (1.1.0, for the vessel
+            // light): a presence-weighted scan over the fold's reach, not a fixed-point step (the
+            // fold's slope in latitude is far above 1, so iterating lat ← mean − fold(lat) bounces
+            // between unrelated points) and not the nearest crossing either (a crossing pair being
+            // born or dying switched the column to another strand; either way the light flickered).
+            // Every other texel (a 12-step scan); the ones between take the mean of their
+            // neighbours below — a light does not need the fold to the texel
+            if ((i & 1) == 0)
+            {
+                float latEff, w;
+                AuroraNoise.RibbonPresence(lon, cLat + shift, bp.t, hemi, bp.foldStrength, bp.foldScale, seed, bp.independence, 12, out latEff, out w);
+                dst[o + 3] = latEff;
+                wdst[row * res + i] = w;
+            }
         }
+        for (int i = 1; i < res; i += 2)
+        {
+            int o = baseIdx + i * 4;
+            int prev = baseIdx + (i - 1) * 4, next = baseIdx + ((i + 1) % res) * 4;
+            dst[o + 3] = 0.5f * (dst[prev + 3] + dst[next + 3]);
+            wdst[row * res + i] = 0.5f * (wdst[row * res + i - 1] + wdst[row * res + (i + 1) % res]);
+        }
+    }
+
+    /// <summary>The LUT as last uploaded, read on the CPU (main thread): meander shift (latNorm),
+    /// flare 0..1, width noise 0..1, the folded ribbon's latitude (latNorm toward the set's pole)
+    /// and how much ribbon the column holds (1 = one straight crossing) for a band (0..2),
+    /// hemisphere (0 north, 1 south) and longitude (radians), linearly interpolated between
+    /// texels as the shader samples it. The vessel light reads the ribbons' positions from here (1.1.0).</summary>
+    public bool Sample(int band, int hemi, float longitudeRad, out float shift, out float flare01, out float width01, out float ribbonLat, out float ribbonWeight)
+    {
+        shift = 0f; flare01 = 0.5f; width01 = 0.5f; ribbonLat = 0f; ribbonWeight = 1f;
+        if (front == null || wFront == null || tex == null) return false;
+        int res = tex.width;
+        if (res < 2 || front.Length < res * Rows * 4) return false;
+        int row = Mathf.Clamp(band, 0, 2) * 2 + Mathf.Clamp(hemi, 0, 1);
+        // texel i's centre is longitude ((i + 0.5) / res − 0.5) × 2π
+        float u  = (longitudeRad / (Mathf.PI * 2f) + 0.5f) * res - 0.5f;
+        u -= Mathf.Floor(u / res) * res;                        // wrap
+        int   i0 = Mathf.FloorToInt(u) % res, i1 = (i0 + 1) % res;
+        float f  = u - Mathf.Floor(u);
+        int   o0 = (row * res + i0) * 4, o1 = (row * res + i1) * 4;
+        shift     = Mathf.Lerp(front[o0],     front[o1],     f) - 0.5f;
+        flare01   = Mathf.Lerp(front[o0 + 1], front[o1 + 1], f);
+        width01   = Mathf.Lerp(front[o0 + 2], front[o1 + 2], f);
+        ribbonLat = Mathf.Lerp(front[o0 + 3], front[o1 + 3], f);
+        ribbonWeight = Mathf.Lerp(wFront[row * res + i0], wFront[row * res + i1], f);
+        return true;
     }
 
     // ---- main-thread plumbing ---------------------------------------------------
@@ -249,8 +317,19 @@ public class AuroraMeanderTexture : MonoBehaviour
             auroraMaterial.SetTexture("_MeanderTex", tex);
     }
 
-    float CurrentTime()       => auroraMaterial != null ? auroraMaterial.GetFloat("_AnimTime")   : 0f;
-    float CurrentNoiseScale() => auroraMaterial != null ? auroraMaterial.GetFloat("_NoiseScale") : 2.5f;
+    BakeParams CurrentParams()
+    {
+        var bp = new BakeParams { noiseScale = 2.5f, latCenter = 0.65f, spacing = 1f, foldStrength = 0f, foldScale = 1f };
+        if (auroraMaterial == null) return bp;
+        bp.t            = auroraMaterial.GetFloat("_AnimTime");
+        bp.noiseScale   = auroraMaterial.GetFloat("_NoiseScale");
+        bp.latCenter    = auroraMaterial.GetFloat("_LatCenter");
+        bp.spacing      = auroraMaterial.GetFloat("_BandSpacing");
+        bp.foldStrength = auroraMaterial.GetFloat("_FoldStrength");
+        bp.foldScale    = auroraMaterial.GetFloat("_FoldScale");
+        bp.independence = auroraMaterial.GetFloat("_BandIndependence");
+        return bp;
+    }
 
     void Upload()
     {

@@ -50,13 +50,19 @@ if ($fileVer -and -not $fileVer.StartsWith($version)) { Write-Warning "DLL file 
 
 $stage = Join-Path ([System.IO.Path]::GetTempPath()) ("rva_release_" + [guid]::NewGuid().ToString("N"))
 $dst   = Join-Path $stage "GameData\RealisticVolumetricAurorae"
-foreach ($d in "Bundles", "Plugins", "PluginData", "Compatibility") { New-Item -ItemType Directory -Path (Join-Path $dst $d) -Force | Out-Null }
+foreach ($d in "Bundles", "Plugins", "PluginData", "Compatibility", "Config") { New-Item -ItemType Directory -Path (Join-Path $dst $d) -Force | Out-Null }
 
 Copy-Item $Bundle (Join-Path $dst "Bundles\rva_shaders")
 Copy-Item $Dll    (Join-Path $dst "Plugins\RealisticVolumetricAurorae.dll")
 Copy-Item (Join-Path $src "Compatibility\*.cfg") (Join-Path $dst "Compatibility\")
+Copy-Item (Join-Path $src "Config\*.cfg")        (Join-Path $dst "Config\")           # per-body presets (RVA_AURORA), 1.1.0
 Copy-Item (Join-Path $src "RealisticVolumetricAurorae.version") $dst
-Copy-Item (Join-Path $src "LICENSE.txt") $dst
+# the licence ships inside the mod folder (forum rules, CKAN); the kit root's copy is the same text,
+# so a kit folder without the GameData copy is fine
+$lic = Join-Path $src "LICENSE.txt"
+if (-not (Test-Path $lic)) { $lic = Join-Path $kit "LICENSE.txt" }
+if (-not (Test-Path $lic)) { throw "LICENSE.txt not found in '$src' or '$kit' - it must ship in the zip" }
+Copy-Item $lic (Join-Path $dst "LICENSE.txt")
 Copy-Item (Join-Path $PSScriptRoot "README.md") (Join-Path $dst "README.md")     # the user-facing readme
 
 $ref = Get-Content (Join-Path $src "PluginData\settings.cfg") -Raw
@@ -90,7 +96,10 @@ try {
     $must = @("GameData/RealisticVolumetricAurorae/Bundles/rva_shaders",
               "GameData/RealisticVolumetricAurorae/Plugins/RealisticVolumetricAurorae.dll",
               "GameData/RealisticVolumetricAurorae/RealisticVolumetricAurorae.version",
-              "GameData/RealisticVolumetricAurorae/LICENSE.txt")
+              "GameData/RealisticVolumetricAurorae/LICENSE.txt",
+              "GameData/RealisticVolumetricAurorae/Config/Kerbin.cfg",
+              "GameData/RealisticVolumetricAurorae/Config/Jool.cfg",
+              "GameData/RealisticVolumetricAurorae/Config/Laythe.cfg")
     foreach ($m in $must) {
         $e = $z.Entries | Where-Object { $_.FullName.Replace('\', '/') -eq $m }
         if (-not $e)            { throw "ZIP LAYOUT ERROR: missing entry '$m'" }

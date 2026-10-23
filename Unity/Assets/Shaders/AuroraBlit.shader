@@ -46,6 +46,34 @@
 //           cloud, after the haze floor); right half = the aurora's irradiance
 //           on the cloud-top shell, in the light's colour — where the cloud
 //           light would land and how strong, clouds or not (v3.11)
+//   Pass 4  TEMPORAL RESOLVE (1.1.0). Drawn by AuroraRenderer right after the
+//           march, as one triangle into the two history buffers (near, far),
+//           which are up to 2× the render buffers' size. For each history texel:
+//             - the current frame's nearest sample (the march tilted every ray by
+//               this frame's sub-pixel jitter, so the samples sit at k + ½ + j in
+//               render pixels) with a Gaussian weight of its distance — the
+//               history pixels near this frame's samples take them in strongly,
+//               the others wait for a frame whose jitter lands nearer: over the
+//               jitter sequence the history converges on the image at its own,
+//               higher resolution (the "TAAU" reconstruction);
+//             - the previous history, reprojected: the texel's ray is rebuilt
+//               from the camera basis, the aurora's mean distance along it (aux
+//               target, or the shell's mid radius where nothing was seen) gives
+//               a world point, _PrevVP (last frame's projection × view, planet-
+//               relative) says where that point was on screen last frame. The
+//               aurora is fixed in planet-centred, world-oriented space, so this
+//               is exact for camera rotation and right to first order for the
+//               camera's translation;
+//             - rejection: no history outside last frame's view, or where the
+//               near-scene depth the march was cut at (far.a) differs from last
+//               frame's — a vessel part or terrain moving across the aurora;
+//             - variance clipping: the history is clamped to the mean ± γσ of the
+//               current frame's 3×3 neighbourhood, so the animation's changes
+//               and anything the rejection misses cannot ghost for long;
+//             - blend: lerp(history, current, (1 − weight) × gaussian).
+//           near.a (irradiance) and far.a (depth cut) are the current frame's,
+//           not accumulated. The composite then reads the history instead of the
+//           render buffers; with accumulation off nothing here runs.
 //
 // UVs come from the fragment's own screen pixel position (VPOS), so the
 // orientation does not depend on how Unity set up the blit quad: the aurora
@@ -132,6 +160,18 @@ Shader "RVA/AuroraBlit"
         sampler2D _AuroraAfterClouds;
         // Global written by EVE's cloud renderer: its reconstructed cloud buffer (mode 2)
         sampler2D colorBuffer;
+
+        // ---- temporal resolve (pass 4, 1.1.0) — all set by AuroraRenderer each frame
+        sampler2D _CurNear, _CurFar, _CurAux;      // this frame's render buffers (aux.r = mean aurora distance, world units)
+        sampler2D _HistNear, _HistFar;             // last frame's history buffers
+        float4    _CurTexelSize;                   // (1/w, 1/h, w, h) of the render buffers
+        float4    _HistTexelSize;                  // (1/w, 1/h, w, h) of the history buffers (this pass's target)
+        float4    _TemporalJitter;                 // xy = this frame's sample offset, render pixels, in the buffer's memory axes
+        float4    _TemporalParams;                 // x = history weight, y = clip γ, z = 1 / (2σ²) of the reconstruction kernel, w = 1 when the history is valid
+        float4    _CamPosRel;                      // camera position relative to the planet centre (this renderer's units)
+        float4    _ShellParams;                    // x = radius of the shell's middle (R + (base + top) / 2), y = a "far" distance for rays that miss it
+        float4x4  _PrevVP;                         // last frame's projection × view (Camera.projectionMatrix convention) × translate(planet centre)
+        // (the camera basis comes from UNITY_MATRIX_V, the field of view from unity_CameraProjection — both Unity's)
 
         struct v2f { float2 dummy : TEXCOORD0; };
 
@@ -317,6 +357,124 @@ Shader "RVA/AuroraBlit"
         }
 
         float3 tonemap(float3 c) { return 1.0 - exp(-c); }
+
+        // ---- temporal resolve (pass 4, 1.1.0): see the header -----------------
+        struct v2fTri { float2 dummy : TEXCOORD0; };
+
+        // one triangle over the whole target (vertex ids 0..2)
+        v2fTri vertTri (uint vid : SV_VertexID, out float4 outpos : SV_POSITION)
+        {
+            v2fTri o;
+            o.dummy = float2(0, 0);
+            float2 p = float2((vid == 1) ? 3.0 : -1.0, (vid == 2) ? 3.0 : -1.0);
+            outpos = float4(p, 0.5, 1.0);
+            return o;
+        }
+
+        struct ResolveOut
+        {
+            float4 near : SV_Target0;   // accumulated near aurora, a = this frame's irradiance
+            float4 far  : SV_Target1;   // accumulated far aurora,  a = this frame's depth cut (km)
+        };
+
+        ResolveOut fragResolve (v2fTri i, UNITY_VPOS_TYPE screenPos : VPOS)
+        {
+            ResolveOut o;
+            float2 hp  = screenPos.xy;                                   // this history texel (pixel centre: x + 0.5, y + 0.5)
+            float2 huv = hp * _HistTexelSize.xy;                         // its memory uv
+            // its position in render-pixel units, and the current frame's nearest sample:
+            // the march put this frame's samples at k + 0.5 + jitter (render pixels)
+            float2 xr   = hp * (_CurTexelSize.zw * _HistTexelSize.xy);
+            float2 j    = _TemporalJitter.xy;
+            float2 kf   = floor(xr - j);
+            float2 dd   = xr - (kf + 0.5 + j);
+            float  wRec = exp(-dot(dd, dd) * _TemporalParams.z);          // the reconstruction kernel
+            float2 cuv  = (kf + 0.5) * _CurTexelSize.xy;
+            float4 cN   = tex2Dlod(_CurNear, float4(cuv, 0, 0));
+            float4 cF   = tex2Dlod(_CurFar,  float4(cuv, 0, 0));
+            float  tMean = tex2Dlod(_CurAux, float4(cuv, 0, 0)).r;
+            // the current frame read smoothly at this texel's own position (the jitter undone):
+            // what a texel shows when it has no usable history
+            float2 buv  = (xr - j) * _CurTexelSize.xy;
+            float4 bN   = tex2Dlod(_CurNear, float4(buv, 0, 0));
+            float4 bF   = tex2Dlod(_CurFar,  float4(buv, 0, 0));
+
+            // Reproject. Memory uv → the camera's NDC (y up): with the projection flipped
+            // (rendering into a texture, _ProjectionParams.x = −1) memory rows run up the
+            // image, otherwise down it. The same rule turns last frame's NDC back into a
+            // memory uv of the history buffer, which was rasterised the same way.
+            float2 ndc = huv * 2.0 - 1.0;
+            ndc.y *= -_ProjectionParams.x;
+            float3 right = UNITY_MATRIX_V[0].xyz, up = UNITY_MATRIX_V[1].xyz, fwd = -UNITY_MATRIX_V[2].xyz;
+            float  tanH = 1.0 / max(abs(unity_CameraProjection._m00), 1e-6);
+            float  tanV = 1.0 / max(abs(unity_CameraProjection._m11), 1e-6);
+            float3 rd   = normalize(fwd + right * (ndc.x * tanH) + up * (ndc.y * tanV));
+            float  t    = tMean;
+            if (t <= 0.0)
+            {
+                // nothing seen along this ray this frame: use the shell's middle (near side from
+                // outside, far side from inside), or "far" if the ray misses it
+                float3 ro   = _CamPosRel.xyz;
+                float  b    = dot(ro, rd);
+                float  c    = dot(ro, ro) - _ShellParams.x * _ShellParams.x;
+                float  disc = b * b - c;
+                t = _ShellParams.y;
+                if (disc > 0.0)
+                {
+                    float sd = sqrt(disc), tn = -b - sd, tf = -b + sd;
+                    float th = (c > 0.0) ? ((tn > 0.0) ? tn : tf) : tf;
+                    if (th > 0.0) t = th;
+                }
+            }
+            float3 P   = _CamPosRel.xyz + rd * t;
+            float4 pc  = mul(_PrevVP, float4(P, 1.0));
+            bool valid = _TemporalParams.w > 0.5 && pc.w > 1e-6;
+            float2 pn  = pc.xy / max(pc.w, 1e-6);
+            float2 puv = float2(pn.x * 0.5 + 0.5, pn.y * (-_ProjectionParams.x) * 0.5 + 0.5);
+            valid = valid && puv.x >= 0.0 && puv.x <= 1.0 && puv.y >= 0.0 && puv.y <= 1.0;
+
+            float4 hN = float4(0, 0, 0, 0), hF = float4(0, 0, 0, 0);
+            if (valid)
+            {
+                hN = tex2Dlod(_HistNear, float4(puv, 0, 0));
+                hF = tex2Dlod(_HistFar,  float4(puv, 0, 0));
+                // disocclusion: the near-scene depth the march was cut at (km, 0 = not cut) must agree
+                float dc = cF.a, dp = hF.a;
+                bool same = (dc <= 0.0 && dp <= 0.0) || (dc > 0.0 && dp > 0.0 && abs(dc - dp) <= 0.1 * max(dc, dp));
+                valid = same;
+            }
+            if (!valid)
+            {
+                o.near = float4(bN.rgb, cN.a);
+                o.far  = float4(bF.rgb, cF.a);
+                return o;
+            }
+
+            // variance clipping against the current frame's 3×3 neighbourhood around the nearest sample
+            float3 mN = 0, qN = 0, mF = 0, qF = 0;
+            [unroll]
+            for (int y = -1; y <= 1; y++)
+            {
+                [unroll]
+                for (int x = -1; x <= 1; x++)
+                {
+                    float2 uv2 = (kf + 0.5 + float2(x, y)) * _CurTexelSize.xy;
+                    float3 n = tex2Dlod(_CurNear, float4(uv2, 0, 0)).rgb;
+                    float3 f = tex2Dlod(_CurFar,  float4(uv2, 0, 0)).rgb;
+                    mN += n; qN += n * n; mF += f; qF += f * f;
+                }
+            }
+            mN /= 9.0; qN /= 9.0; mF /= 9.0; qF /= 9.0;
+            float3 sN = sqrt(max(qN - mN * mN, 0.0)), sF = sqrt(max(qF - mF * mF, 0.0));
+            float  g  = _TemporalParams.y;
+            float3 hNc = clamp(hN.rgb, mN - g * sN, mN + g * sN);
+            float3 hFc = clamp(hF.rgb, mF - g * sF, mF + g * sF);
+
+            float a = (1.0 - _TemporalParams.x) * wRec;
+            o.near = float4(lerp(hNc, cN.rgb, a), cN.a);
+            o.far  = float4(lerp(hFc, cF.rgb, a), cF.a);
+            return o;
+        }
         ENDCG
 
         // 0: additive composite — the aurora
@@ -393,6 +551,17 @@ Shader "RVA/AuroraBlit"
                 float amount = (_CloudGrabMode > 1.5) ? cloudAmount(uv) : saturate(cloudAmount(uv) * 4.0);
                 return fixed4(amount, amount, amount, 1.0);
             }
+            ENDCG
+        }
+
+        // 4: temporal resolve (1.1.0) — one triangle into the two history buffers
+        Pass
+        {
+            Blend Off
+            CGPROGRAM
+            #pragma vertex   vertTri
+            #pragma fragment fragResolve
+            #pragma target   4.0
             ENDCG
         }
     }

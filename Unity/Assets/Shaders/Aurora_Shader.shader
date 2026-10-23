@@ -17,13 +17,44 @@
 //   - Green → blue → pink altitude gradient (upper bands compressed)
 //   - Independent north / south ovals (hemispheric seed offset)
 //
+// 1.1.0 performance (the picture is unchanged unless the temporal accumulation is on)
+//   - FINE LATITUDE GATE (auroraBand): the cheap pre-gate in auroraField has to
+//     allow for the meander — the LUT shifts each arc's centre by up to ±0.225
+//     latNorm along its length — so it lets every sample within ±(0.23 + 0.65 ×
+//     fold + width) of an arc's nominal latitude through to the fold noise, the
+//     dearest thing a near-miss sample evaluates. auroraBand now reads the LUT
+//     (which it did anyway) and tests the sample against the SHIFTED centre with
+//     only the fold and the width as margin, before the fold is evaluated: at the
+//     shipped folds about half the near-miss samples stop there. Exact — the same
+//     geometric bound the pre-gate uses, with the meander known instead of
+//     bounded. (A longitude × latitude coverage map baked per frame was tried
+//     first; the ribbon's distance measure |F| / |∇F| is not smooth enough across
+//     a texel for a conservative map at any affordable size — see the 1.1.0 notes.)
+//   - TEMPORAL ACCUMULATION (AuroraBlit pass 4): the renderer rotates the sample
+//     offsets each frame (_TemporalOffset: a golden-ratio shift of the blue-noise
+//     value, which keeps its spatial distribution) and tilts every ray by a
+//     sub-pixel amount (_RayJitter), so successive frames sample different
+//     depths and different sub-pixels; the composite shader averages them into
+//     a history buffer reprojected through the camera's motion. The march writes
+//     a third target: the density-weighted mean distance of what it saw, which
+//     the reprojection uses as the pixel's depth.
+//   - _StepFilter: the fraction of the step the noise is filtered to (it was a
+//     constant ¾). With accumulation on, a smaller value keeps finer rays with
+//     coarser steps — the aliasing a single frame shows is what the accumulation
+//     averages away.
+//   The temporal globals (_RayJitter, _TemporalOffset) are set per draw by the
+//   renderer's command buffer, not on the material: the scaled-space instances copy
+//   the local material every frame, and a global survives that. Build tag 1110.
+//
 // v3 changes
 //   - Meander + flare come from a small lookup texture (_MeanderTex,
 //     longitude × band/hemisphere) that C# computes on the CPU each frame
 //     (AuroraMeanderTexture.cs). Same math, but 6 of the 15 fbm calls per
 //     sample are gone, and the latitude gate is exact from the first test.
-//   - Step length is fixed in world units (_StepLength × planet radius,
-//     capped at _MaxSteps per ray, per-pixel jittered) instead of "N steps
+//   - Step length is a function of distance from the camera (1.1.0: from
+//     _StepLength × _StepNear × R up close, growing by _StepGrowth per unit of
+//     distance, to _StepLength × _StepFarMul × R; _MaxSteps is a safety cap;
+//     per-pixel jittered) instead of "N steps
 //     per chord", so a thin shell on a big planet is sampled as finely as
 //     the Unity test scene and raising the height never thickens the layers.
 //   - Integration is normalised to the shell thickness: changing the aurora
@@ -214,6 +245,12 @@ Shader "RVA/Aurora"
         _GreenSpikes    ("Green rays into upper bands", Range(0, 1)) = 0.0
 
         _SphereRadius ("Sphere radius", Float) = 10.0
+        // 1.1.0, another body's aurora drawn from here: a sphere that hides it (the body the
+        // vessel is at — xyz relative to this aurora's planet centre, w = radius; w = 0 none)
+        _Occluder     ("Occluder sphere (set by C#)", Vector) = (0, 0, 0, 0)
+        // 1.1.0: 1 = every sample counts as beyond the cloud tops (a distant body's aurora is
+        // behind this world's clouds everywhere), so the composite occludes all of it per pixel
+        _ForceFar     ("All samples to the far target", Float) = 0
 
         // Sampling: step length is a fraction of the planet radius (0.005 = 3 km
         // on Kerbin, 0.05 units in the Unity test scene), at most MaxSteps per
@@ -226,10 +263,27 @@ Shader "RVA/Aurora"
         // noise is always filtered to the step, so coarse steps mean smooth
         // rays, never blocks.
         _StepNear    ("Step scale near the band", Range(0.1, 1)) = 0.25
-        _MaxSteps    ("Max steps per ray", Range(8, 256)) = 64
+        // 1.1.0: the step grows with distance from the camera — dt = clamp(_StepGrowth × t,
+        // _StepLength × _StepNear × R, _StepLength × _StepFarMul × R) — and no longer depends on
+        // the ray's total length through the shell (which made neighbouring rays sample the
+        // same aurora at very different densities: the seam along the band's lower horizon).
+        _StepGrowth  ("Step growth per unit distance", Range(0, 0.1)) = 0.03
+        _StepFarMul  ("Far step (× step length)", Range(1, 8)) = 3
+        _MaxSteps    ("Max steps per ray", Range(8, 512)) = 192
         _Jitter      ("Sample jitter", Range(0, 1)) = 0.75
+        // 1.1.0: the per-pixel offset comes from this blue-noise tile when the plugin
+        // supplies one (AuroraBlueNoise.cs); gradient noise otherwise. Under-sampled
+        // features show the offset pattern through — gradient noise as stripes, blue
+        // noise as grain the upsample smooths away.
+        _BlueNoise   ("Blue-noise tile (set by C#)", 2D) = "gray" {}
+        _BlueNoiseOn ("1 = use the tile", Float) = 0.0
+        // 1.1.0: the noise is filtered to this fraction of the march step (it was a constant ¾):
+        // content finer than the sample spacing cannot be integrated and aliases into blocks.
+        // With the temporal accumulation on, lower values keep finer rays at coarser steps.
+        _StepFilter  ("Noise filter width (× step)", Range(0.2, 1.5)) = 0.75
 
         _Brightness  ("Brightness", Range(0, 40)) = 8.0
+
 
         // Longitude × (band, hemisphere) lookup: R = meander shift + 0.5,
         // G = flare 0..1. Generated by AuroraMeanderTexture.cs. Gray = neutral.
@@ -246,7 +300,7 @@ Shader "RVA/Aurora"
         // _CloudLightBlur (its mip chain does the blurring). So the glow sits
         // exactly where the curtains are, bright under bright curtains, gone
         // where there is no aurora, and without the curtains' fine structure.
-        // Night side only when _SunDir is set. 0 = off.
+        // Night side only when _SunDir is set. w = the daylight weight (1 sunlit, 0 off / eclipsed by the parent body).
         _CloudLight    ("Cloud light (irradiance gain)", Range(0, 10)) = 0.0
         // Blur radius of that light on the clouds (world units)
         _CloudLightBlur ("Cloud light blur", Float) = 60000.0
@@ -273,6 +327,12 @@ Shader "RVA/Aurora"
         _PixelAngle  ("Pixel angle (set by C#)", Float) = 0.0
 
         _DebugMode   ("Debug mode (0 = off)", Float) = 0.0
+
+        // 1.1.0: build tag. The plugin reads this default when it loads the bundle and
+        // compares it with RVABootstrap.ShaderBuild; a mismatch means the DLL and the
+        // bundle were built from different sources (new features silently inert). Bump
+        // both together whenever a uniform is added or renamed.
+        _RVAShaderBuild ("Shader build (read by C#)", Float) = 1110
     }
 
     SubShader
@@ -304,7 +364,14 @@ Shader "RVA/Aurora"
             sampler2D _EmissionMap;
             float4 _EmissionMapSize;
             float  _SphereRadius;
-            float  _StepLength, _StepNear, _MaxSteps, _Jitter;
+            float4 _Occluder;
+            float  _ForceFar;
+            float  _StepLength, _StepNear, _MaxSteps, _Jitter, _StepGrowth, _StepFarMul, _StepFilter;
+            sampler2D _BlueNoise;
+            float  _BlueNoiseOn;
+            // 1.1.0 temporal accumulation — GLOBALS, set per draw by AuroraRenderer's command buffer (see the header)
+            float4    _RayJitter;        // sub-pixel ray tilt: xy = (right, up) per unit of forward; 0 = none
+            float     _TemporalOffset;   // per-frame shift of the sample offsets (0 = the static pattern)
             float4 _SunDir;
             float  _DaylightFade;
             float  _Brightness;
@@ -472,28 +539,34 @@ Shader "RVA/Aurora"
 
             // Ribbon fold displacement (latNorm units) at a surface-projected
             // horizontal position, plus its gradient w.r.t. that position
-            // (.y = d/dx, .z = d/dz). One fold field for all bands; each band
+            // (.yzw = d/dx, d/dy, d/dz). One fold field for all bands; each band
             // samples it through its own rotated + shifted domain, scaled by
             // _BandIndependence (0 = the same field for all three → nested
             // parallel contours, 1 = three uncorrelated fields that cross and
             // merge). A rotation never collapses or stretches the field, so
             // every independence value gives folds of the same size.
             // AuroraNoise.Fold is the CPU twin (value only).
-            float3 foldAt(float3 hpN, float t, float hemi, float seedOffset)
+            // 1.1.0: the field is sampled at the point on the planet's surface (radius
+            // 10) under the sample, in 3D, not at its projection onto the equatorial
+            // plane as before — that projection squeezed the poleward direction by
+            // sin(latitude), stretching every curl and ray more and more toward the
+            // equator, which a storm that reaches the equator could not hide.
+            float4 foldAt(float3 sP, float t, float hemi, float seedOffset, float foldStrength)
             {
-                if (_FoldStrength <= 0.0005) return float3(0, 0, 0);
+                if (foldStrength <= 0.0005) return float4(0, 0, 0, 0);
                 float k = _BandIndependence;
                 float sa, ca;
                 sincos(k * seedOffset * 0.0173, sa, ca);
-                float3 dom = float3(hpN.x * ca - hpN.z * sa, 0.0, hpN.x * sa + hpN.z * ca)
+                float3 dom = float3(sP.x * ca - sP.z * sa, sP.y, sP.x * sa + sP.z * ca)
                            + float3(seedOffset * 0.37, 0.0, seedOffset * 0.11) * k;
                 float  sc = 0.6 * _FoldScale;
                 float3 fs = dom * sc + float3(t * 0.03 + 3.1 + hemi * 500.0, 0.0, t * 0.02 + 7.7);
                 float4 n  = fbmd(fs);
-                // gradient back through the rotation (R^T) and the scale
+                // gradient back through the rotation (R^T, about the polar axis) and the scale
                 float gx = (n.y * ca + n.w * sa) * sc;
+                float gy = n.z * sc;
                 float gz = (-n.y * sa + n.w * ca) * sc;
-                return float3(n.x - 0.5, gx, gz) * _FoldStrength;
+                return float4(n.x - 0.5, gx, gy, gz) * foldStrength;
             }
 
             // Arc-length distance (internal units, 1 = R/10) from a point at
@@ -514,21 +587,20 @@ Shader "RVA/Aurora"
                 float  latNorm;
                 float  lon01;
                 float  hemi;
-                float3 hp;
-                float3 hpN;             // projected onto the planet surface
+                float3 hp;              // the point on the planet's surface under the sample (radius 10), 1.1.0
+                float3 hpN;             // the same (kept for the noise domains that read it)
                 float  internalAltTop;  // band thickness, internal units
-                float2 rhoHat, east;    // local frame for ribbonDistance
-                float  sinLat;
+                float3 east3, north3;   // tangent frame at hpN for ribbonDistance; north3 points toward THIS set's pole
             };
 
-            float ribbonDistance(float F, float3 fold3, SampleGeo geo)
+            float ribbonDistance(float F, float4 fold, SampleGeo geo)
             {
-                float  gRho   = dot(fold3.yz, geo.rhoHat);
-                float  gE     = dot(fold3.yz, geo.east);
-                // (east, poleward) components, latNorm per unit of arc length:
-                // latitude rises 1/(10·π/2) per unit poleward, the fold's radial
-                // slope maps onto the poleward direction by −sin(lat)
-                float2 gradArc = float2(gE, 0.063662 - geo.sinLat * gRho);
+                // (east, poleward) components of ∇F on the surface, latNorm per unit of
+                // arc length: latitude rises 1/(10·π/2) per unit poleward, plus the fold's
+                // own slope along each direction
+                float  gE = dot(fold.yzw, geo.east3);
+                float  gN = dot(fold.yzw, geo.north3);
+                float2 gradArc = float2(gE, 0.063662 + gN);
                 return abs(F) / max(length(gradArc), 0.01);
             }
 
@@ -542,10 +614,34 @@ Shader "RVA/Aurora"
             // sample one and the same fold field, so the first band to need it
             // computes it and the others reuse it (bit-identical: the rotation
             // is by 0 and the offset is × 0).
+            // What a ribbon is made of, apart from where it is (1.1.0): the three
+            // polar arcs pass the uniforms unchanged (mainTweak); anything that wants
+            // a thinner ribbon, a fold of its own size or no meander shift passes its own.
+            struct BandTweak
+            {
+                float latWidth;      // half-width, latNorm units
+                float foldStrength;  // fold amplitude, latNorm units
+                float foldZoom;      // the fold field is sampled at hpN × this (curls this many times smaller)
+                float shiftScale;    // × the LUT's meander shift (0 = none)
+                float widthVar;      // width × (1 ± this) along the ribbon
+                float topSpread;     // widening toward the top
+            };
+            BandTweak mainTweak()
+            {
+                BandTweak tw;
+                tw.latWidth = _LatWidth; tw.foldStrength = _FoldStrength; tw.foldZoom = 1.0;
+                tw.shiftScale = 1.0; tw.widthVar = _WidthVariance; tw.topSpread = _TopSpread;
+                return tw;
+            }
+
             float2 auroraBand(SampleGeo geo, float t, int bandIndex, float bandLatCenter,
                               float seedOffset, float detail, float pxI, float envPx,
-                              inout float3 foldCache, inout float foldCached)
+                              inout float4 foldCache, inout float foldCached, BandTweak tw)
             {
+                // time moves every 3D noise domain along this direction (the old
+                // domains were 2D slices with time in the unused axis; the surface
+                // point now fills all three)
+                const float3 drift = float3(0.57735, 0.57735, 0.57735);
                 float altitude       = geo.altitude;
                 float internalAltTop = geo.internalAltTop;
                 float latNorm        = geo.latNorm;
@@ -558,11 +654,28 @@ Shader "RVA/Aurora"
                 // hemisphere (CPU-generated LUT)
                 float rowV  = ((float)bandIndex * 2.0 + hemi + 0.5) / 6.0;
                 float4 lut  = tex2Dlod(_MeanderTex, float4(geo.lon01, rowV, 0, 0));
-                float bandShift = lut.r - 0.5;
+                float bandShift = (lut.r - 0.5) * tw.shiftScale;
                 float flare     = lerp(0.7, 1.6, lut.g);
                 // local thickness: width × (1 ± variance), driven by slow noise along the band
-                float widthScale = lerp(1.0 - _WidthVariance, 1.0 + _WidthVariance, lut.b);
-                float localWidth = _LatWidth * max(widthScale, 0.15);
+                float widthScale = lerp(1.0 - tw.widthVar, 1.0 + tw.widthVar, lut.b);
+                float localWidth = tw.latWidth * max(widthScale, 0.15);
+
+                // FINE LATITUDE GATE (1.1.0): the same geometric bound auroraField's pre-gate
+                // applies — the ribbon lies within its half-width of a centre line that the
+                // fold moves by at most ±0.65 × its amplitude — but around the centre as the
+                // meander actually shifts it here (the LUT above), not the nominal centre ± the
+                // meander's whole ±0.225 range, and with this longitude's own width rather than
+                // the widest. Also the pixel minimum the ribbon is widened to when it is far
+                // away (never thinner than 1.5 px — wMin below). At the shipped folds about
+                // half the near-miss samples end here, before the fold noise. Conservative in
+                // the same sense as the pre-gate: the ribbon's own measure |F| / |∇F| could
+                // reach past this bound only where the fold sits near an extreme and is steep
+                // at the same time, which smooth noise does not do.
+                {
+                    float wLat = max(localWidth * (1.0 + max(tw.topSpread, 0.0)), pxI * 1.5 * 0.063662);   // latNorm (1 arc unit = 0.0637 latNorm)
+                    float fineGate = wLat + 0.65 * tw.foldStrength + 0.01;
+                    if (abs(latNorm - (bandLatCenter + bandShift)) > fineGate) return float2(0, 0);
+                }
 
                 // Ribbon folds. The ribbon is the zero contour of
                 //     F = latNorm − (centre + meander) + fold(x, z)
@@ -571,15 +684,24 @@ Shader "RVA/Aurora"
                 // can never give. dist is the true arc distance to that contour
                 // (internal units), so the ribbon keeps one thickness all the
                 // way round its curls. AuroraLightRing/AuroraNoise.Fold is the CPU twin.
-                float3 fold3;
+                float4 fold;
                 if (_BandIndependence <= 0.0)
                 {
-                    if (foldCached < 0.5) { foldCache = foldAt(hpN, t, hemi, seedOffset); foldCached = 1.0; }
-                    fold3 = foldCache;
+                    if (foldCached < 0.5)
+                    {
+                        foldCache = foldAt(hpN * tw.foldZoom, t, hemi, seedOffset, tw.foldStrength);
+                        foldCache.yzw *= tw.foldZoom;                      // chain rule for the zoomed domain
+                        foldCached = 1.0;
+                    }
+                    fold = foldCache;
                 }
-                else fold3 = foldAt(hpN, t, hemi, seedOffset);
-                float  F     = latNorm - (bandLatCenter + bandShift) + fold3.x;
-                float  dist  = ribbonDistance(F, fold3, geo);
+                else
+                {
+                    fold = foldAt(hpN * tw.foldZoom, t, hemi, seedOffset, tw.foldStrength);
+                    fold.yzw *= tw.foldZoom;
+                }
+                float  F     = latNorm - (bandLatCenter + bandShift) + fold.x;
+                float  dist  = ribbonDistance(F, fold, geo);
 
                 // EXACT EARLY-OUT (v3.18, tightened v3.19): the cross-section
                 // gate below is zero whenever dist ≥ wEff. wEff grows with
@@ -596,7 +718,7 @@ Shader "RVA/Aurora"
                 float wMin    = pxI * 1.5;
                 float ceilMin = min(internalAltTop * (1.0 - 0.7 * _HeightVariance), internalAltTop);
                 float anMax   = (ceilMin > 1e-6) ? saturate(altitude / ceilMin) : 1.0;
-                float wMaxHere = localWidth * (1.0 + max(_TopSpread, 0.0) * anMax * anMax) * 15.70796;
+                float wMaxHere = localWidth * (1.0 + max(tw.topSpread, 0.0) * anMax * anMax) * 15.70796;
                 if (dist >= max(wMaxHere, wMin)) return float2(0, 0);
 
                 // Variable ceiling (band body)
@@ -614,7 +736,7 @@ Shader "RVA/Aurora"
                 // 1 = plateau with a thin anti-aliased rim.
                 float altNormRaw = saturate(altitude / localCeiling);
                 // half-width in internal arc units (1 latNorm = 10·π/2 units)
-                float wEff   = localWidth * (1.0 + _TopSpread * altNormRaw * altNormRaw) * 15.70796;
+                float wEff   = localWidth * (1.0 + tw.topSpread * altNormRaw * altNormRaw) * 15.70796;
                 // Never thinner than ~1.5 pixels: widen and dim in proportion so a
                 // distant ribbon stays a smooth line instead of a broken jaggy one.
                 // The dimming (widthComp) is applied to the final density, AFTER
@@ -637,7 +759,7 @@ Shader "RVA/Aurora"
                 bool  needG = _GreenSpikes > 0.001;
                 if (needG && _Spikiness > 0.001)
                 {
-                    float3 gs = hpN * (0.25 * _NoiseScale) + float3(seedOffset * 2.3 + 41.0, t * 0.12, 0);
+                    float3 gs = hpN * (0.25 * _NoiseScale) + float3(seedOffset * 2.3 + 41.0, 0, 0) + drift * (t * 0.12);
                     g = smoothstep(0.55, 0.80, fbm(gs)) * _GreenSpikes;
                     needG = false;
                 }
@@ -650,7 +772,7 @@ Shader "RVA/Aurora"
                 float spikeDensity = 0.0, spikeColorAlt = 1.0;
                 if (_Spikiness > 0.001)
                 {
-                    float3 hs = hpN * (0.9 * _NoiseScale) + float3(seedOffset * 1.7 + 5.0, t * 0.25, 0);
+                    float3 hs = hpN * (0.9 * _NoiseScale) + float3(seedOffset * 1.7 + 5.0, 0, 0) + drift * (t * 0.25);
                     float m = saturate((fbmAA(hs, 1.0 / (0.9 * _NoiseScale), pxI) - _SpikeThreshold) / max(1.0 - _SpikeThreshold, 0.05));
                     m = m * m * m;
                     if (m > 0.002)
@@ -732,14 +854,14 @@ Shader "RVA/Aurora"
                     float3 pWarped = hpN + warp * warpStrength * 2.0;
 
                     // Two-zone pattern
-                    float3 baseInput = float3(pWarped.x, 0, pWarped.z) * 0.25 * _NoiseScale
-                                     + float3(seedOffset, t * 0.15, 0);
+                    float3 baseInput = pWarped * 0.25 * _NoiseScale
+                                     + float3(seedOffset, 0, 0) + drift * (t * 0.15);
                     float basePattern = fbm(baseInput);
                     basePattern = lerp(0.45, 0.65, basePattern);
 
                     float  rayCell  = 1.0 / (0.4 * _NoiseScale * _RayScale);   // first-octave cell, internal units
-                    float3 rayInput = float3(pWarped.x, 0, pWarped.z) * 0.4 * _NoiseScale * _RayScale
-                                    + float3(seedOffset, t * 0.3, 0);
+                    float3 raySpace = pWarped * 0.4 * _NoiseScale * _RayScale + float3(seedOffset, 0, 0);
+                    float3 rayInput = raySpace + drift * (t * 0.3);
                     float upperPattern = fbmAA(rayInput, rayCell, pxI);
 
                     // Close-range detail: two more octaves on the rays (horizontal
@@ -754,8 +876,8 @@ Shader "RVA/Aurora"
                         if (f7 > 0.0)
                         {
                             // the two detail octaves are turned too (61° and 61° + 37°), see fbmAA
-                            float3 r7 = rotXZ(rayInput, 0.4848096, 0.8746197);
-                            float3 dp = float3(r7.x * 7.0, rayInput.y * 2.0, r7.z * 7.0) + 11.7;
+                            float3 r7 = rotXZ(raySpace, 0.4848096, 0.8746197);
+                            float3 dp = r7 * 7.0 + drift * (t * 0.6) + 11.7;     // space × 7, time × 2
                             float  d7 = lerp(0.5, noise3(dp), f7) * 0.6;
                             float  d16 = 0.5 * 0.4;
                             if (f16 > 0.0)
@@ -784,7 +906,7 @@ Shader "RVA/Aurora"
                         // needed here, for a body that is actually lit (v3.18/v3.19)
                         if (needG)
                         {
-                            float3 gs = hpN * (0.25 * _NoiseScale) + float3(seedOffset * 2.3 + 41.0, t * 0.12, 0);
+                            float3 gs = hpN * (0.25 * _NoiseScale) + float3(seedOffset * 2.3 + 41.0, 0, 0) + drift * (t * 0.12);
                             g = smoothstep(0.55, 0.80, fbm(gs)) * _GreenSpikes;
                         }
 
@@ -826,7 +948,12 @@ Shader "RVA/Aurora"
                 g.altitude = g.r - 10.0 - internalBase;        // height above the band's bottom
                 if (g.altitude <= 0.0) return float3(0, 0.5, 0);
 
-                g.latNorm = asin(saturate(abs(g.p.y) / g.r)) / 1.5707963;
+                // Signed latitude (1.1.0): + north. Each hemisphere has its own set of
+                // three arcs, at +c and −c, each a smooth curve in its own right that
+                // may cross the equator when the storm takes it there. Until now the
+                // latitude was |lat|, which mirrored one set into both hemispheres and
+                // bent every arc into a cusp where it met its reflection at the equator.
+                float latS = asin(clamp(g.p.y / g.r, -1.0, 1.0)) / 1.5707963;
 
                 // CHEAP PRE-GATE: meander ±0.225, folds ±0.65·FoldStrength, width
                 // incl. variance and top spread — anything farther from the
@@ -836,10 +963,14 @@ Shader "RVA/Aurora"
                 float c2Lat = _LatCenter - 0.05 * _BandSpacing;
                 float c3Lat = _LatCenter + 0.04 * _BandSpacing;
                 bool  a2 = _Arc2Fade > 0.001, a3 = _Arc3Fade > 0.001;
-                float m1 = abs(g.latNorm - c1Lat) - preGate;
-                float m2 = a2 ? abs(g.latNorm - c2Lat) - preGate : 1e30;
-                float m3 = a3 ? abs(g.latNorm - c3Lat) - preGate : 1e30;
-                float mMin = min(m1, min(m2, m3));
+                float n1 = abs(latS - c1Lat) - preGate;                       // the northern set …
+                float n2 = a2 ? abs(latS - c2Lat) - preGate : 1e30;
+                float n3 = a3 ? abs(latS - c3Lat) - preGate : 1e30;
+                float s1 = abs(-latS - c1Lat) - preGate;                      // … and the southern
+                float s2 = a2 ? abs(-latS - c2Lat) - preGate : 1e30;
+                float s3 = a3 ? abs(-latS - c3Lat) - preGate : 1e30;
+                float mN = min(n1, min(n2, n3)), mS = min(s1, min(s2, s3));
+                float mMin = min(mN, mS);
                 if (mMin > 0.0)
                 {
                     // every active arc is out of range by mMin latNorm = mMin·π/2 rad;
@@ -849,30 +980,53 @@ Shader "RVA/Aurora"
                 }
 
                 g.lon01 = atan2(g.p.z, g.p.x) * 0.15915494 + 0.5;
-                g.hemi  = (g.p.y >= 0.0) ? 0.0 : 1.0;
-                // Horizontal position. hpN is projected onto the planet surface
-                // so it is constant along a vertical line — anything built from
-                // it (folds, rays, spike columns, green-ray regions) stands
-                // exactly upright.
-                g.hp  = float3(g.p.x, 0, g.p.z);
-                g.hpN = g.hp * (10.0 / g.r);
-                float rho = max(length(g.hpN.xz), 1e-3);
-                g.rhoHat = g.hpN.xz / rho;                              // away from the pole axis
-                g.east   = float2(-g.rhoHat.y, g.rhoHat.x);
-                g.sinLat = sqrt(saturate(1.0 - rho * rho * 0.01));      // rho = 10 cos(lat)
+                // The point on the planet's surface under the sample (radius 10): every
+                // noise domain reads it, so anything built from it — folds, rays, spike
+                // columns, green-ray regions — stands exactly upright and looks the same
+                // at every latitude (1.1.0; it used to be the projection onto the
+                // equatorial plane, which stretched everything toward the equator).
+                float3 sP = g.p * (10.0 / g.r);
+                g.hp  = sP;
+                g.hpN = sP;
+                float3 up   = sP * 0.1;
+                float  rho  = length(up.xz);
+                float3 east = rho > 1e-4 ? float3(-up.z, 0.0, up.x) / rho : float3(1, 0, 0);
+                float3 north = cross(east, up);                             // toward the +y pole
+                g.east3 = east;
 
-                float3 foldCache = float3(0, 0, 0);
-                float  foldCached = 0.0;
-                float2 b1 = float2(0, 0), b2 = float2(0, 0), b3 = float2(0, 0);
-                if (m1 <= 0.0) b1 = auroraBand(g, t, 0, c1Lat, 0.0,    detail, pxI, envPx, foldCache, foldCached);
-                // the outer arcs fade in with the storm (v3.15); an absent arc is skipped
-                if (m2 <= 0.0) { b2 = auroraBand(g, t, 1, c2Lat, 73.41,  detail, pxI, envPx, foldCache, foldCached); b2.x *= _Arc2Fade; }
-                if (m3 <= 0.0) { b3 = auroraBand(g, t, 2, c3Lat, 218.93, detail, pxI, envPx, foldCache, foldCached); b3.x *= _Arc3Fade; }
+                BandTweak mt = mainTweak();
+                float dSum = 0.0, aSum = 0.0;
+                // the two sets in a real loop: one copy of the three arc evaluations in
+                // the compiled code, not two (the compiler would otherwise inline six)
+                // … and the three arcs in a real loop inside it, so the compiled code
+                // holds ONE copy of the arc evaluation instead of three (or six)
+                [loop]
+                for (int h = 0; h < 2; h++)
+                {
+                    bool  south = h > 0;
+                    if ((south ? mS : mN) > 0.0) continue;
+                    g.latNorm = south ? -latS : latS;
+                    g.hemi    = south ? 1.0 : 0.0;
+                    g.north3  = south ? -north : north;
+                    float4 fc = float4(0, 0, 0, 0); float fcd = 0.0;
+                    [loop]
+                    for (int b = 0; b < 3; b++)
+                    {
+                        // the outer arcs fade in with the storm (v3.15); an absent or out-of-gate arc is skipped
+                        float gate = (b == 0) ? (south ? s1 : n1) : (b == 1) ? (south ? s2 : n2) : (south ? s3 : n3);
+                        if (gate > 0.0) continue;
+                        float cLat = (b == 0) ? c1Lat : (b == 1) ? c2Lat : c3Lat;
+                        float seed = (b == 0) ? 0.0 : (b == 1) ? 73.41 : 218.93;
+                        float fade = (b == 0) ? 1.0 : (b == 1) ? _Arc2Fade : _Arc3Fade;
+                        float2 bd = auroraBand(g, t, b, cLat, seed, detail, pxI, envPx, fc, fcd, mt);
+                        bd.x *= fade;
+                        dSum += bd.x;
+                        aSum += bd.x * bd.y;
+                    }
+                }
 
-                float totalDensity = b1.x + b2.x + b3.x;
-                if (totalDensity <= 0.001) return float3(0, 0.5, 0);
-                float weightedAltNorm = (b1.x * b1.y + b2.x * b2.y + b3.x * b3.y) / totalDensity;
-                return float3(saturate(totalDensity * 0.6), weightedAltNorm, 0);
+                if (dSum <= 0.001) return float3(0, 0.5, 0);
+                return float3(saturate(dSum * 0.6), aSum / dSum, 0);
             }
 
             // ---------- color from altitude ------------------------------------
@@ -926,6 +1080,7 @@ Shader "RVA/Aurora"
             {
                 float4 near : SV_Target0;   // rgb aurora before the cloud shell, a irradiance
                 float4 far  : SV_Target1;   // rgb aurora beyond the cloud shell, a scene depth this texel used (km; 0 = none)
+                float4 aux  : SV_Target2;   // r = density-weighted mean distance of the aurora along this ray (world units; 0 = none) — 1.1.0, for the temporal reprojection
             };
 
             // far.a carries the scene depth this texel's march was cut against
@@ -933,11 +1088,12 @@ Shader "RVA/Aurora"
             // buffers with it: a screen pixel only takes texels whose depth
             // agrees with its own, so vessel and terrain silhouettes come out
             // at screen resolution instead of blurred buffer texels (v3.16).
-            FragOut outNF(float3 near, float3 far, float irr, float depthKm)
+            FragOut outNF(float3 near, float3 far, float irr, float depthKm, float tMean)
             {
                 FragOut o;
                 o.near = float4(near, irr);
                 o.far  = float4(far, depthKm);
+                o.aux  = float4(tMean, 0, 0, 0);
                 return o;
             }
 
@@ -945,9 +1101,19 @@ Shader "RVA/Aurora"
             {
                 float3 ro = _WorldSpaceCameraPos - _PlanetCenter.xyz;
                 float3 rd = normalize(i.worldPos - ro);
+                // Temporal accumulation (1.1.0): tilt the ray by this frame's sub-pixel offset.
+                // _RayJitter.xy is the offset in units of the view direction (pixels × 2 tan(fov/2)
+                // / buffer size, computed by the renderer); y is in buffer rows, which run up the
+                // image when the projection is flipped (render texture) and down it otherwise.
+                if (abs(_RayJitter.x) + abs(_RayJitter.y) > 1e-12)
+                {
+                    float3 right = UNITY_MATRIX_V[0].xyz, up = UNITY_MATRIX_V[1].xyz, fwd = -UNITY_MATRIX_V[2].xyz;
+                    float  k = max(dot(rd, fwd), 1e-4);
+                    rd = normalize(rd / k + right * _RayJitter.x + up * (_RayJitter.y * -_ProjectionParams.x));
+                }
 
                 if (_DebugMode > 0.5 && _DebugMode < 1.5)
-                    return outNF(float3(2.0, 0.0, 0.0), float3(0, 0, 0), 1.0, 0.0);
+                    return outNF(float3(2.0, 0.0, 0.0), float3(0, 0, 0), 1.0, 0.0, 0.0);
 
                 float thick  = max(_AltTop - _AltBase, 1e-5);
                 float rOuter = _SphereRadius + _AltTop + thick * 1.6 * _Spikiness;   // room for spikes
@@ -995,6 +1161,29 @@ Shader "RVA/Aurora"
                             tPlanet = tPlanetNear;
                             if (tPlanetNear < tEnd) tEnd = tPlanetNear;
                             if (gapLen > 0.0 && gapStart < tEnd) { tEnd = gapStart; gapLen = 0.0; }   // ends at the band's bottom
+                        }
+                    }
+                }
+
+                // Stop at the occluder sphere (1.1.0): another body's aurora seen
+                // from the surface or orbit of this one — Jool's from Laythe. Exact,
+                // at any distance, where the depth buffer is far too coarse.
+                if (_Occluder.w > 0.0)
+                {
+                    float3 roO = ro - _Occluder.xyz;
+                    float  bO  = dot(roO, rd);
+                    float  cO  = dot(roO, roO) - _Occluder.w * _Occluder.w;
+                    if (cO > 0.0)                                  // camera outside the occluder
+                    {
+                        float dO = bO * bO - cO;
+                        if (dO > 0.0)
+                        {
+                            float tO = -bO - sqrt(dO);
+                            if (tO > 0.0 && tO < tEnd)
+                            {
+                                tEnd = tO;
+                                if (gapLen > 0.0 && gapStart + gapLen > tEnd) { if (gapStart < tEnd) tEnd = gapStart; gapLen = 0.0; }
+                            }
                         }
                     }
                 }
@@ -1069,14 +1258,15 @@ Shader "RVA/Aurora"
                     }
                     else if (tPlanet > 0.0) tRecv = tPlanet;
                     if (!(_CloudLight > 0.001 && !(nearHit && tScene < 3000.0))) tRecv = -1.0;
+                    if (_ForceFar > 0.5) tCloud = 0.0;             // 1.1.0: a distant body's aurora is beyond this world's clouds everywhere
                 }
                 if (tRecv > 0.0)
                 {
                     float3 P   = ro + rd * tRecv;
                     float3 up  = normalize(P);
                     float night = 1.0;
-                    if (_SunDir.w > 0.5)
-                        night = 1.0 - smoothstep(-0.15, 0.1, dot(up, _SunDir.xyz));
+                    if (_SunDir.w > 0.001)                      // w = daylight weight: 1 in sunlight, 0 while eclipsed by the parent body (1.1.0)
+                        night = 1.0 - _SunDir.w * smoothstep(-0.15, 0.1, dot(up, _SunDir.xyz));
                     if (night > 0.001)
                     {
                         float  internalScale = 10.0 / _SphereRadius;
@@ -1120,140 +1310,162 @@ Shader "RVA/Aurora"
                 if (tEnd <= t)
                 {
                     if (irr <= 0.0) discard;
-                    return outNF(float3(0, 0, 0), float3(0, 0, 0), irr * _Brightness, depthKm);
+                    return outNF(float3(0, 0, 0), float3(0, 0, 0), irr * _Brightness, depthKm, 0.0);
                 }
 
                 if (_DebugMode > 1.5 && _DebugMode < 2.5)
-                    return outNF(float3(0.0, 0.0, 2.0), float3(0, 0, 0), 1.0, depthKm);
+                    return outNF(float3(0.0, 0.0, 2.0), float3(0, 0, 0), 1.0, depthKm, 0.0);
 
-                // Step length in world units (independent of the aurora height,
-                // so raising the height never thickens the layers), capped per
-                // ray. It shrinks to _StepNear × the far value as the first
-                // sample comes within half a planet radius of the camera: from
-                // under the band the curtains fill the view, and a 3 km step
-                // through 1–2 km rays cannot resolve them — it only chops
-                // them into blocks (v3.10).
-                float shell   = max(_AltTop - _AltBase, 1e-5);
-                float nearFar = saturate(t / (0.5 * _SphereRadius));
-                float stepLen = max(_StepLength, 0.0001) * _SphereRadius * lerp(clamp(_StepNear, 0.1, 1.0), 1.0, nearFar);
+                // Step size (1.1.0): a function of distance from the camera only —
+                //   dt(t) = clamp(_StepGrowth × t, dtMin, dtMax)
+                // dtMin = _StepLength × _StepNear × R up close (curtains overhead, the
+                // camera inside the shell), growing with range like the pixel
+                // footprint does, dtMax = _StepLength × _StepFarMul × R far out. Until
+                // v1.0.1 one step size was spread over the whole ray and capped at
+                // _MaxSteps, so a ray running the full chord of the shell sampled
+                // the same aurora 10× coarser than its neighbour that dipped under
+                // the band — a seam along the band's lower horizon, and inside a
+                // 600 km shell (Jool) coarse enough for the sample shells to show
+                // as rings. Now neighbouring rays agree, and the budget (_MaxSteps)
+                // is a safety cap that only the longest grazing rays approach.
+                float shell = max(_AltTop - _AltBase, 1e-5);
+                float dtMin = max(_StepLength, 0.0001) * _SphereRadius * clamp(_StepNear, 0.05, 1.0);
+                float dtMax = max(_StepLength, 0.0001) * _SphereRadius * max(_StepFarMul, 1.0);
+                float grow  = max(_StepGrowth, 0.0);
                 if (gapLen > 0.0 && gapStart + gapLen >= tEnd) { gapLen = 0.0; if (gapStart < tEnd) tEnd = gapStart; }
-                float L       = (tEnd - t) - gapLen;
-                if (L <= 0.0) { if (irr <= 0.0) discard; return outNF(float3(0, 0, 0), float3(0, 0, 0), irr * _Brightness, depthKm); }
+                float L = (tEnd - t) - gapLen;
+                if (L <= 0.0) { if (irr <= 0.0) discard; return outNF(float3(0, 0, 0), float3(0, 0, 0), irr * _Brightness, depthKm, 0.0); }
                 // Two segments when the ray dives under the band and comes back out
                 // beyond the horizon: the near one (t .. gapStart) and the far one
-                // (gapStart + gapLen .. tEnd). Each gets its own step count and step
-                // size (v3.24b). One shared budget used to make the near segment's
-                // step double the moment a ray cleared the limb and a far segment
-                // appeared — a seam along the planet's horizon, half the sampling
-                // density on the space side. Rays with a single segment are exactly
-                // as before.
-                float L1  = (gapLen > 0.0) ? (gapStart - t) : L;
-                float L2  = (gapLen > 0.0) ? (tEnd - (gapStart + gapLen)) : 0.0;
-                int   n1  = (int)clamp(ceil(L1 / stepLen), 2.0, _MaxSteps);
-                float dt1 = L1 / (float)n1;
-                int   n2  = (L2 > 0.0) ? (int)clamp(ceil(L2 / stepLen), 1.0, _MaxSteps) : 0;
-                float dt2 = (n2 > 0) ? L2 / (float)n2 : dt1;
-                int   nSteps  = n1 + n2;
-                float tFar    = gapStart + gapLen;                    // where the far segment starts
+                // (gapStart + gapLen .. tEnd). The march hops over the hollow keeping
+                // its phase, so the far segment is sampled exactly like the near one.
+                float segEnd = (gapLen > 0.0) ? gapStart : tEnd;
+                float tFar   = gapStart + gapLen;
+                bool  farSeg = false;
 
-                // Per-pixel sample offset (interleaved gradient noise): turns
-                // the remaining sample-plane banding into fine grain that the
-                // low-res upsample smooths away.
-                float jitter = frac(52.9829189 * frac(dot(i.pos.xy, float2(0.06711056, 0.00583715))));
+                // Per-pixel sample offset: turns the remaining sample-plane
+                // banding into fine grain that the low-res upsample smooths away.
+                // Blue noise when the plugin supplies the tile (1.1.0) — the
+                // interleaved gradient noise used before is a fine diagonal grating,
+                // and wherever a feature is under-sampled (a far band's thin
+                // ribbons) that grating showed through as stripes.
+                float jitter = (_BlueNoiseOn > 0.5)
+                             ? tex2Dlod(_BlueNoise, float4(i.pos.xy * (1.0 / 64.0), 0, 0)).r
+                             : frac(52.9829189 * frac(dot(i.pos.xy, float2(0.06711056, 0.00583715))));
+                // Temporal accumulation (1.1.0): the renderer shifts every pixel's offset by the
+                // same amount each frame (a golden-ratio sequence) — a Cranley–Patterson rotation,
+                // which keeps the blue noise blue — so successive frames sample different depths
+                // and the history converges on the integral. 0 when accumulation is off.
+                jitter = frac(jitter + _TemporalOffset);
                 float offset = 0.5 + (jitter - 0.5) * _Jitter;
+                float tc = t + offset * clamp(grow * t, dtMin, dtMax);
 
                 // Scale-free integration: a full traverse of the shell at
                 // density 1 adds 0.6 — identical to the Unity-tuned baseline
                 // (shell 2.0 × old factor 0.3) at any planet size or height.
-                float k1 = (dt1 / shell) * 0.6;
-                float k2 = (dt2 / shell) * 0.6;
+                float kShell = 0.6 / shell;
                 float internalScale = 10.0 / _SphereRadius;
+                int   maxN = (int)max(_MaxSteps, 8.0);
+                float filt = clamp(_StepFilter, 0.2, 1.5);                 // 1.1.0: the noise filter's width as a fraction of the step (was ¾)
 
                 float3 colorNear = float3(0, 0, 0), colorFar = float3(0, 0, 0);
-                float  alpha = 0.0;
+                float  alpha = 0.0, tSum = 0.0;                            // tSum: Σ distance × contribution → the aux target's mean distance
                 float  time  = _AnimTime;
 
                 if (_DebugMode > 5.5 && _DebugMode < 6.5)
                 {
                     float maxDens = 0.0, sumAlt = 0.0;
-                    int hitCount = 0;
-                    for (int s = 0; s < nSteps; s++)
+                    int hitCount = 0, nTaken = 0;
+                    float tcd = tc, segEndD = segEnd; bool farD = false;
+                    [loop]
+                    for (int sd = 0; sd < maxN; sd++)
                     {
-                        bool  farSeg = s >= n1;
-                        float dtc = farSeg ? dt2 : dt1;
-                        float tc  = farSeg ? (tFar + ((float)(s - n1) + offset) * dt2) : (t + ((float)s + offset) * dt1);
-                        float pxP = max(max(tc, 1.0) * _PixelAngle, dtc * 0.75) * internalScale;
-                        float3 fld = auroraField(ro + rd * tc, time, 0.0, pxP, dtc * 0.75 * internalScale);
+                        if (tcd >= segEndD)
+                        {
+                            if (farD || gapLen <= 0.0) break;
+                            farD = true; tcd = tFar + (tcd - segEndD); segEndD = tEnd;
+                            if (tcd >= segEndD) break;
+                        }
+                        float dtd = clamp(grow * tcd, dtMin, dtMax);
+                        float pxP = max(max(tcd, 1.0) * _PixelAngle, dtd * filt) * internalScale;
+                        float3 fld = auroraField(ro + rd * tcd, time, 0.0, pxP, dtd * filt * internalScale);
                         if (fld.x > 0.0001) { maxDens = max(maxDens, fld.x); sumAlt += fld.y; hitCount++; }
+                        nTaken++;
+                        tcd += dtd;
                     }
                     float avgAlt  = (hitCount > 0) ? (sumAlt / (float)hitCount) : 0.0;
-                    float hitFrac = (float)hitCount / (float)nSteps;
-                    return outNF(float3(saturate(maxDens * 4.0), saturate(avgAlt), saturate(hitFrac * 4.0)), float3(0, 0, 0), 1.0, depthKm);
+                    float hitFrac = (float)hitCount / (float)max(nTaken, 1);
+                    return outNF(float3(saturate(maxDens * 4.0), saturate(avgAlt), saturate(hitFrac * 4.0)), float3(0, 0, 0), 1.0, depthKm, 0.0);
                 }
 
-                // skipLeft: samples still to jump over because an earlier one
-                // proved them empty (v3.18, see the end of the loop body). Kept
-                // as a plain counter with an if/else — the loop variable is never
-                // touched and there is no continue, which fxc copes with best.
-                int skipLeft = 0;
                 [loop]
-                for (int s = 0; s < nSteps; s++)
+                for (int s = 0; s < maxN; s++)
                 {
-                    if (skipLeft > 0) { skipLeft--; }
-                    else
+                    if (tc >= segEnd)
                     {
-                        bool  farSeg = s >= n1;                   // beyond the hollow under the band
-                        float dtc = farSeg ? dt2 : dt1;
-                        float tc  = farSeg ? (tFar + ((float)(s - n1) + offset) * dt2) : (t + ((float)s + offset) * dt1);
-                        float3 p = ro + rd * tc;
-                        // detail fades in inside ~3 planet-tenths (180 km on Kerbin),
-                        // is gone beyond 12 (720 km) — the Unity test camera never sees it
-                        float detail = _DetailStrength * (1.0 - smoothstep(3.0, 12.0, tc * internalScale));
-                        // Sample footprint, internal units: the pixel at this
-                        // distance, but never smaller than ¾ of the step. Noise
-                        // finer than the sample spacing cannot be resolved along
-                        // the ray — it aliases, and because neighbouring pixels
-                        // sample at correlated depths the aliasing is coherent:
-                        // hard-edged blocks that jump as the noise animates. Fading
-                        // those octaves out (fbmAA) leaves what the march can
-                        // actually integrate; finer steps near the band bring the
-                        // detail back where it is large on screen (v3.10).
-                        float stepI = dtc * 0.75 * internalScale;                       // ¾ step, internal units
-                        float pxI   = max(max(tc, 1.0) * _PixelAngle * internalScale, stepI);
-                        float3 fld  = auroraField(p, time, detail, pxI, stepI);
-                        if (fld.x > 0.001)
-                        {
-                            // Daylight: real aurorae vanish against a sunlit sky.
-                            // Full on the night side, gone a little past the terminator.
-                            float dayAtten = 1.0;
-                            if (_SunDir.w > 0.5 && _DaylightFade > 0.001)
-                                dayAtten = 1.0 - _DaylightFade * smoothstep(-0.2, 0.05, dot(normalize(p), _SunDir.xyz));
+                        if (farSeg || gapLen <= 0.0) break;
+                        farSeg = true; tc = tFar + (tc - segEnd); segEnd = tEnd;   // hop over the hollow, keep the phase
+                        if (tc >= segEnd) break;
+                    }
+                    float  dtc = clamp(grow * tc, dtMin, dtMax);
+                    float3 p   = ro + rd * tc;
+                    // detail fades in inside ~3 planet-tenths (180 km on Kerbin),
+                    // is gone beyond 12 (720 km) — the Unity test camera never sees it
+                    float detail = _DetailStrength * (1.0 - smoothstep(3.0, 12.0, tc * internalScale));
+                    // Sample footprint, internal units: the pixel at this
+                    // distance, but never smaller than ¾ of the step. Noise
+                    // finer than the sample spacing cannot be resolved along
+                    // the ray — it aliases, and because neighbouring pixels
+                    // sample at correlated depths the aliasing is coherent:
+                    // hard-edged blocks that jump as the noise animates. Fading
+                    // those octaves out (fbmAA) leaves what the march can
+                    // actually integrate; finer steps near the band bring the
+                    // detail back where it is large on screen (v3.10).
+                    float stepI = dtc * filt * internalScale;                       // the filter's share of the step (¾ by default), internal units
+                    float pxI   = max(max(tc, 1.0) * _PixelAngle * internalScale, stepI);
+                    float3 fld  = auroraField(p, time, detail, pxI, stepI);
+                    if (fld.x > 0.001)
+                    {
+                        // Daylight: real aurorae vanish against a sunlit sky.
+                        // Full on the night side, gone a little past the terminator.
+                        float dayAtten = 1.0;
+                        if (_SunDir.w > 0.001 && _DaylightFade > 0.001)
+                            dayAtten = 1.0 - _DaylightFade * _SunDir.w * smoothstep(-0.2, 0.05, dot(normalize(p), _SunDir.xyz));
 
-                            // Soft knee instead of a hard early exit: dense overlaps
-                            // saturate smoothly, so neighbouring pixels (whose jittered
-                            // samples cross the limit at different depths) stay
-                            // consistent instead of breaking into blocks.
-                            float knee = saturate((1.6 - alpha) * 1.6667);
-                            float contribution = fld.x * (farSeg ? k2 : k1) * dayAtten * knee;
-                            float3 add = auroraColor(fld.y) * contribution;
-                            if (tc < tCloud || _FarSplit < 0.5) colorNear += add; else colorFar += add;
-                            alpha += contribution;
-                            if (alpha >= 1.6) break;
-                        }
-                        else if (fld.z > 0.0)
-                        {
-                            // Every arc rejected this sample at the latitude pre-gate
-                            // with fld.z of room along the ray: the samples inside
-                            // that room are exactly zero, so jump over them. Never
-                            // across the hop over the hollow — beyond it the latitude
-                            // is anything (v3.18).
-                            float room = farSeg ? 1e30 : (gapStart - tc);
-                            skipLeft = (int)floor(min(fld.z, room) / dtc);
-                        }
-                    }   // else (not skipped)
+                        // Soft knee instead of a hard early exit: dense overlaps
+                        // saturate smoothly, so neighbouring pixels (whose jittered
+                        // samples cross the limit at different depths) stay
+                        // consistent instead of breaking into blocks.
+                        float knee = saturate((1.6 - alpha) * 1.6667);
+                        float contribution = fld.x * dtc * kShell * dayAtten * knee;
+                        float3 add = auroraColor(fld.y) * contribution;
+                        if (tc < tCloud || _FarSplit < 0.5) colorNear += add; else colorFar += add;
+                        alpha += contribution;
+                        tSum  += contribution * tc;
+                        if (alpha >= 1.6) break;
+                    }
+                    else if (fld.z > 0.0)
+                    {
+                        // Every arc rejected this sample at the latitude pre-gate
+                        // with fld.z of room along the ray: that stretch is exactly
+                        // zero, so jump to its end. Never across the hop over the
+                        // hollow — beyond it the latitude is anything (v3.18).
+                        // Land this pixel's own fraction of a step PAST the end,
+                        // not exactly on it (1.1.0): rays that all land on the same
+                        // bound (a latitude cone) lose their jitter and march on
+                        // in lockstep from there, and the sample shells the jitter
+                        // breaks up come back as stripes across whatever they meet
+                        // next (the far bands from an equatorial orbit, the map view).
+                        float room = farSeg ? 1e30 : (segEnd - tc);
+                        float skip = min(fld.z, room);
+                        if (skip > dtc) tc += skip - dtc + offset * dtc;
+                    }
+                    tc += dtc;
                 }
 
-                return outNF(colorNear * _Brightness, colorFar * _Brightness, irr * _Brightness, depthKm);
+                // aux: where along the ray the aurora this pixel shows sits, on average (0 = nothing seen)
+                float tMean = (alpha > 1e-6) ? tSum / alpha : 0.0;
+                return outNF(colorNear * _Brightness, colorFar * _Brightness, irr * _Brightness, depthKm, tMean);
             }
             // ---------- emission map (pass 1) ------------------------------
             // Bakes the aurora's visible density (auroraField, three altitudes)

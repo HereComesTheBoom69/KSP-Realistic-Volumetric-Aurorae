@@ -32,7 +32,38 @@ both), and CKAN happens on its own after SpaceDock.
 
        GameData/RealisticVolumetricAurorae/Bundles/rva_shaders            (a file, no extension)
        GameData/RealisticVolumetricAurorae/Plugins/RealisticVolumetricAurorae.dll
+       GameData/RealisticVolumetricAurorae/Config/*.cfg                  (the per-body presets, 1.1.0)
 
+4b. **1.1.0 checks:** Jool orbit at 300–900 km (inside the band: no rings, no seam at the
+   band's lower horizon), the view of Jool's limb from Laythe's surface and from Laythe
+   orbit (its aurora hidden by Laythe's terrain and clouds, visible above the horizon),
+   Laythe's own aurora from its surface at ~54° latitude and from low orbit (green base,
+   red top, nothing showing through the sea or the terrain, no horizontal stripes across
+   the far oval from an equatorial orbit), a Laythe storm from the ground near the equator
+   (window → Storm → manual intensity 1: the arcs fan out from the oval down to overhead,
+   and draw back as you lower it), an eclipse — time-warp on
+   Laythe's day side until Jool covers the sun: the log says "Laythe: in Jool's shadow —
+   daylight fade lifted" and the aurora comes up over the lit side, and goes again when
+   the sun returns — an SOI crossing Laythe → Jool (the local aurora rebuilds; the log
+   says "Main body changed"), the map view zoomed to Jool and to Kerbin, and the
+   tracking station. With SPVE installed: no second, flat aurora on Jool or Laythe (the
+   removal patch found SPVE's layers; if one is still there, see its header).
+   **Temporal accumulation** (window → Performance; on by default): whip the camera round
+   the vessel and stop — no aurora trailing behind the motion, no smear at the vessel's
+   edges; let it settle — no grain, and the ribbons sharper than with the toggle off at
+   the same render scale; time-warp through a storm — the arcs move without ghosting;
+   toggle it off and on — the picture rebuilds within a second. Then the measurement:
+   FPS with the toggle on vs off at your render scale, and with it on at half that scale.
+   **Storms** (45 min of real time apart): the window's status line reads "quiet, next storm
+   in N min" (N up to about 45 the first time, never counting down during a pause, and
+   not faster at 4× physics warp); revert the flight or visit the tracking station and
+   come back — N carries on from where it was; the *Storm now* button brings one on at
+   once and the line then says "storm rising to …", "at its peak …", "fading …"; drag the
+   minutes slider down to 1 and the next storm is due within the minute.
+4c. **DLL and bundle from the same source.** After rebuilding either, start KSP and find
+   `[RVA] Shader build 1110 — matches the plugin` in KSP.log (the window's status line
+   shows it too). A `SHADER / PLUGIN MISMATCH` warning means one of the two is stale:
+   rebuild it from the current kit before testing anything else.
 5. **Test the zip, not your working folder.** Move your own
    `GameData/RealisticVolumetricAurorae` aside, extract the release zip into
    GameData, start KSP, and check the log for `Bundle loaded` and `Shaders
@@ -107,7 +138,7 @@ gets a post.
 Post in **Add-on Releases**. The add-on posting rules, applied to RVA:
 
 - Title carries the KSP version and the mod version:
-  `[1.12.x] Realistic Volumetric Aurorae (RVA) v1.0.0 — a volumetric aurora for Kerbin`
+  `[1.12.x] Realistic Volumetric Aurorae (RVA) v1.1.0 — volumetric aurorae for Kerbin, Jool and Laythe`
 - The licence is named in the post **and** included in the download (it is:
   `LICENSE.txt` in the zip).
 - A link to the source (GitHub) — plugins must have source available.
@@ -126,5 +157,7 @@ the editor). Fill in the two links and attach the images.
    `<Version>` in the csproj, `VERSION` in the `.version` file.
 2. Rebuild what changed (shader → bundle; C# → DLL) **from the repository's
    source**, run the packager, then test the zip itself (step 0.5).
-3. GitHub release (tag + zip), SpaceDock new version (same zip), forum post.
-   CKAN follows SpaceDock on its own.
+3. GitHub release (tag `v<version>`, the zip, body = `Release/ReleaseNotes-<version>.md`),
+   SpaceDock new version (same zip, the same notes as its changelog), a reply in the forum
+   thread (`Release/ForumUpdate-<version>.md`) and the first post refreshed from
+   `ForumPost.md` with the thread title's version bumped. CKAN follows SpaceDock on its own.

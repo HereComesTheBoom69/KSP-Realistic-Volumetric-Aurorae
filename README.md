@@ -1,11 +1,11 @@
-# Realistic Volumetric Aurorae (RVA) — build kit, v1.0.0
+# Realistic Volumetric Aurorae (RVA) — build kit, v1.1.0
 
-Volumetric polar aurorae for Kerbin in KSP 1.12.x: a raymarched glow layer
+Volumetric polar aurorae for Kerbin, Jool and Laythe in KSP 1.12.x: a raymarched glow layer
 rendered at reduced resolution and composited onto the flight camera, with
 meandering, folding ribbons, rays, a storm cycle that grows the oval from one
 arc to three, per-pixel occlusion by EVE's volumetric clouds if installed, depth occlusion
 by the vessel and nearby terrain, and a map-view / tracking-station instance.
-It lights nothing. It's just the aurora itself.
+Since 1.1.0 it lights the vessel (and only the vessel: up to four lights from where the aurora's light comes from); the ground and the clouds it leaves alone.
 
 **Standalone** RVA depends on nothing but KSP. Two optional extras:
 
