@@ -1,4 +1,4 @@
-// Realistic Volumetric Aurorae (RVA) — Copyright (c) 2026 HereComesTheBoom ("Realistic Volumetric Aurorae")
+// Realistic Volumetric Aurorae (RVA). Copyright (c) 2026 HereComesTheBoom ("Realistic Volumetric Aurorae")
 // SPDX-License-Identifier: CC-BY-NC-SA-4.0  (see LICENSE.txt)
 using UnityEngine;
 
@@ -10,11 +10,11 @@ namespace RVA
     /// station. It owns one master material in scaled-space units, driven on its own
     /// (meander LUT, storm scheduler, sun direction), and up to two renderers that
     /// follow it:
-    ///   - scaled: a ScaledAuroraDriver on "Camera ScaledSpace" — the map view and the
+    ///   - scaled: a ScaledAuroraDriver on "Camera ScaledSpace", the map view and the
     ///     tracking station, where the planets themselves are scaled-space objects;
     ///   - local (flight only): an AuroraRenderer on the flight camera, synced from the
-    ///     master material × ScaleFactor into metres and parented to the body's
-    ///     local-space transform. It gets what the local aurora gets — the terrain /
+    ///     master material x ScaleFactor into metres and parented to the body's
+    ///     local-space transform. It gets what the local aurora gets: the terrain /
     ///     vessel depth test, EVE's per-pixel cloud occlusion (every sample counts as
     ///     beyond this world's clouds), and an exact analytic occluder for the body the
     ///     vessel is at, so Laythe hides Jool's aurora at any altitude.
@@ -39,7 +39,7 @@ namespace RVA
         public bool                 Built    => material != null;
         /// <summary>False while culled by angular size or switched off by the owner.</summary>
         public bool                 Visible  { get; private set; }
-        /// <summary>Owner switch (map view off …). Default on.</summary>
+        /// <summary>Owner switch (map view off ...). Default on.</summary>
         public bool                 wanted = true;
         /// <summary>The body the vessel is at: hides this aurora (flight only). Null = none.</summary>
         public CelestialBody        occluder;
@@ -48,8 +48,8 @@ namespace RVA
                               : !wanted ? "off"
                               : !Visible ? $"culled ({lastAngleDeg:F2}° < {minAngleDeg:F2}°)"
                               : localRenderer != null && !MapView.MapIsEnabled
-                                  ? $"{lastAngleDeg:F1}°, flight camera{(autoScaleOn && autoScale > 0f ? $", scale {autoScale:F2} by pixel budget (own {configuredScale:F2})" : "")} — {localRenderer.Status}"
-                                  : $"{lastAngleDeg:F1}°, scaled space — {(scaled != null ? scaled.Status : "n/a")}";
+                                  ? $"{lastAngleDeg:F1}°, flight camera{(autoScaleOn && autoScale > 0f ? $", scale {autoScale:F2} by pixel budget (own {configuredScale:F2})" : "")}: {localRenderer.Status}"
+                                  : $"{lastAngleDeg:F1}°, scaled space: {(scaled != null ? scaled.Status : "n/a")}";
 
         CelestialBody        body;
         Material             material;              // master, scaled-space units
@@ -70,7 +70,7 @@ namespace RVA
         public void Build(CelestialBody b, AuroraSettings s, bool withLocal)
         {
             if (b == null || s == null || RVABootstrap.AuroraShader == null) return;
-            if (b.scaledBody == null) { Log($"{b.bodyName} has no scaled body — skipped"); return; }
+            if (b.scaledBody == null) { Log($"{b.bodyName} has no scaled body, skipped"); return; }
             body = b;
 
             float unitsPerMetre = 1f / ScaledSpace.ScaleFactor;
@@ -113,7 +113,7 @@ namespace RVA
                 localRenderer.blitShader       = RVABootstrap.BlitShader;
                 localRenderer.cameraName       = "";                       // the flight camera
                 localRenderer.syncFrom         = material;
-                localRenderer.syncScale        = ScaledSpace.ScaleFactor;  // scaled units → metres
+                localRenderer.syncScale        = ScaledSpace.ScaleFactor;  // scaled units -> metres
                 localRenderer.forceFar         = true;                     // behind this world's clouds everywhere
                 localRenderer.renderingEnabled = false;
             }
@@ -160,7 +160,7 @@ namespace RVA
         {
             if (material == null || body == null || body.scaledBody == null) return;
 
-            // sun direction (daylight fade), in scaled space — the same direction in local space;
+            // sun direction (daylight fade), in scaled space, the same direction in local space;
             // w = the fade's weight, lifted while this body's parent eclipses the sun (Laythe behind Jool)
             CelestialBody sun = Planetarium.fetch != null ? Planetarium.fetch.Sun : null;
             if (sun != null && sun != body && sun.scaledBody != null)
@@ -172,7 +172,7 @@ namespace RVA
                 if (dark != eclipsed)
                 {
                     eclipsed = dark;
-                    Log($"{body.bodyName}: {(dark ? $"in {body.referenceBody.bodyName}'s shadow — daylight fade lifted" : "back in sunlight — daylight fade on")}");
+                    Log($"{body.bodyName}: {(dark ? $"in {body.referenceBody.bodyName}'s shadow, daylight fade lifted" : "back in sunlight, daylight fade on")}");
                 }
             }
             else material.SetVector("_SunDir", Vector4.zero);
@@ -185,7 +185,7 @@ namespace RVA
                 localRenderer.occluder       = occ ? occluder.transform : null;
                 localRenderer.occluderRadius = occ ? (float)occluder.Radius * 0.995f : 0f;
             }
-            // … and in the map view / tracking station the body the map camera is looking at
+            // ... and in the map view / tracking station the body the map camera is looking at
             // (or the vessel's), in scaled space: the scaled camera has no usable depth, so
             // without this Jool's aurora shows through Laythe on the map (1.1.0)
             var sr = scaled != null ? scaled.Renderer : null;
@@ -227,7 +227,7 @@ namespace RVA
                 // costs almost nothing, so what a distant aurora costs is its buffer pixels
                 // INSIDE the body's outline. Keep that number at what the body's own render
                 // scale would spend filling the screen, and the scale can rise toward 1.0
-                // as the body shrinks in the view — Jool from Laythe orbit renders sharp
+                // as the body shrinks in the view: Jool from Laythe orbit renders sharp
                 // for the price of a 0.35 Kerbin, and the same setting still means 0.35
                 // when you are in Jool orbit and it fills the sky.
                 if (!inMap && localRenderer != null && camT != null && visible)
@@ -248,7 +248,7 @@ namespace RVA
             }
             Visible = visible;
 
-            // flight view → the flight-camera renderer; map view / no local renderer → the scaled one
+            // flight view: the flight-camera renderer; map view or no local renderer: the scaled one
             bool useLocal = localRenderer != null && !inMap;
             if (localRenderer != null) localRenderer.renderingEnabled = visible && useLocal;
             if (scaled != null) scaled.SetActive(visible && !useLocal);

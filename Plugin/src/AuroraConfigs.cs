@@ -1,4 +1,4 @@
-// Realistic Volumetric Aurorae (RVA) — Copyright (c) 2026 HereComesTheBoom ("Realistic Volumetric Aurorae")
+// Realistic Volumetric Aurorae (RVA). Copyright (c) 2026 HereComesTheBoom ("Realistic Volumetric Aurorae")
 // SPDX-License-Identifier: CC-BY-NC-SA-4.0  (see LICENSE.txt)
 using System;
 using System.Collections.Generic;
@@ -12,13 +12,13 @@ namespace RVA
     ///
     /// Three layers, each on top of the previous:
     ///   1. the built-in defaults in AuroraSettings (Kerbin's tuned look);
-    ///   2. presets: every RVA_AURORA { body = X … } node GameDatabase knows about —
+    ///   2. presets: every RVA_AURORA { body = X ... } node GameDatabase knows about;
     ///      the mod ships one per body in GameData/RealisticVolumetricAurorae/Config/,
     ///      a planet pack can add its own, ModuleManager can patch them. Any
     ///      per-body setting key is allowed; "enabled = false" switches a body off;
     ///   3. the user's file, PluginData/settings.cfg: the root holds the GLOBAL
     ///      settings and Kerbin's values (so a 1.0.x file reads unchanged), and a
-    ///      BODY { name = X … } node per other body.
+    ///      BODY { name = X ... } node per other body.
     /// A body with no RVA_AURORA node has no aurora. Without any node at all (the
     /// Config folder deleted) Kerbin runs on the built-in defaults, as 1.0.x did.
     /// </summary>
@@ -72,7 +72,7 @@ namespace RVA
             return body != null && entries.TryGetValue(body, out var e) && e.enabled ? e.current : null;
         }
 
-        /// <summary>The preset (defaults + RVA_AURORA) of a body — what "def" and "All defaults" restore.</summary>
+        /// <summary>The preset (defaults + RVA_AURORA) of a body, what "def" and "All defaults" restore.</summary>
         public static AuroraSettings Preset(string body)
         {
             EnsureLoaded();
@@ -122,7 +122,7 @@ namespace RVA
                     string en = n.GetValue("enabled");
                     if (en != null && bool.TryParse(en.Trim(), out bool enabled)) e.enabled = enabled;
                     e.preset.ApplyNode(n, globals: false, perBody: true, allowDevOnly: true, out int bad, out int dev);
-                    e.source = (e.source == null ? "" : e.source + " + ") + $"{PresetNodeName}" + (bad > 0 ? $" ({bad} unparseable)" : "");
+                    e.source = (e.source == null ? "" : e.source + " + ") + $"{PresetNodeName}" + (bad > 0 ? $" ({bad} unparsable)" : "");
                 }
             }
             if (entries.Count == 0)
@@ -137,23 +137,23 @@ namespace RVA
             string path = FilePath;
             if (!File.Exists(path))
             {
-                sb.Append($"no settings file at {path} — presets only");
+                sb.Append($"no settings file at {path}, presets only");
             }
             else
             {
                 ConfigNode root = null;
                 try { root = ConfigNode.Load(path); } catch { }
                 ConfigNode node = root != null ? (root.GetNode(FileNodeName) ?? root.GetNode(LegacyNodeName) ?? root) : null;
-                if (node == null) sb.Append($"settings file unreadable: {path} — presets only");
+                if (node == null) sb.Append($"settings file unreadable: {path}, presets only");
                 else
                 {
                     int applied = 0, bad = 0, dev = 0;
-                    // globals: root → every body
+                    // globals: root to every body
                     foreach (var e in entries.Values) { applied += e.current.ApplyNode(node, true, false, false, out int b1, out int d1); bad += b1; dev += d1; }
-                    // root per-body values → Kerbin (a 1.0.x file is exactly this)
+                    // root per-body values to Kerbin (a 1.0.x file is exactly this)
                     if (entries.TryGetValue(DefaultBody, out var kerbin))
                     { applied += kerbin.current.ApplyNode(node, false, true, false, out int b2, out int d2); bad += b2; dev += d2; }
-                    // BODY nodes → their bodies
+                    // BODY nodes to their bodies
                     var bodyNodes = node.GetNodes(BodyNodeName);
                     if (bodyNodes != null)
                         foreach (var bn in bodyNodes)
@@ -165,7 +165,7 @@ namespace RVA
                             else unknownBodyNodes.Add(bn.CreateCopy());
                         }
                     sb.Append($"loaded {applied} value(s) from {path}")
-                      .Append(bad > 0 ? $" ({bad} unparseable, skipped)" : "")
+                      .Append(bad > 0 ? $" ({bad} unparsable, skipped)" : "")
                       .Append(dev > 0 ? $" ({dev} dev-only key(s) ignored by this build)" : "")
                       .Append(unknownBodyNodes.Count > 0 ? $" ({unknownBodyNodes.Count} BODY node(s) for bodies without a preset, kept)" : "");
                 }
@@ -273,7 +273,7 @@ namespace RVA
             foreach (var b in order)
             {
                 var e = entries[b];
-                sb.Append("  ").Append(b).Append(e.enabled ? "" : " (disabled)").Append(" — ").Append(e.source ?? "defaults").Append('\n');
+                sb.Append("  ").Append(b).Append(e.enabled ? "" : " (disabled)").Append(": ").Append(e.source ?? "defaults").Append('\n');
             }
             return sb.ToString().TrimEnd();
         }

@@ -1,7 +1,7 @@
-// Realistic Volumetric Aurorae (RVA) — Copyright (c) 2026 HereComesTheBoom ("Realistic Volumetric Aurorae")
+// Realistic Volumetric Aurorae (RVA). Copyright (c) 2026 HereComesTheBoom ("Realistic Volumetric Aurorae")
 // SPDX-License-Identifier: CC-BY-NC-SA-4.0  (see LICENSE.txt)
 // =============================================================================
-// Aurora_Shader.shader — volumetric polar aurora  (v3)
+// Aurora_Shader.shader: volumetric polar aurora (v3)
 // =============================================================================
 // Per-pixel raymarch of an auroral shell around the planet. The mesh this is
 // drawn on is irrelevant to the math: every fragment just supplies a ray
@@ -11,25 +11,25 @@
 //
 //   - Three auroral bands at slightly offset latitudes, own seeds
 //   - Variable ray height from two-frequency ceiling noise
-//   - Smoothed (5-tap) meandering centerline — snakes without kinks
+//   - Smoothed (5-tap) meandering centerline, snakes without kinks
 //   - Two-zone pattern: near-uniform green base + dynamic upper layer
 //   - Regional flares, flicker, domain warp
-//   - Green → blue → pink altitude gradient (upper bands compressed)
+//   - Green -> blue -> pink altitude gradient (upper bands compressed)
 //   - Independent north / south ovals (hemispheric seed offset)
 //
 // 1.1.0 performance (the picture is unchanged unless the temporal accumulation is on)
 //   - FINE LATITUDE GATE (auroraBand): the cheap pre-gate in auroraField has to
-//     allow for the meander — the LUT shifts each arc's centre by up to ±0.225
-//     latNorm along its length — so it lets every sample within ±(0.23 + 0.65 ×
+//     allow for the meander (the LUT shifts each arc's centre by up to +/-0.225
+//     latNorm along its length), so it lets every sample within +/-(0.23 + 0.65 x
 //     fold + width) of an arc's nominal latitude through to the fold noise, the
 //     dearest thing a near-miss sample evaluates. auroraBand now reads the LUT
 //     (which it did anyway) and tests the sample against the SHIFTED centre with
 //     only the fold and the width as margin, before the fold is evaluated: at the
-//     shipped folds about half the near-miss samples stop there. Exact — the same
+//     shipped folds about half the near-miss samples stop there. Exact, in the same
 //     geometric bound the pre-gate uses, with the meander known instead of
-//     bounded. (A longitude × latitude coverage map baked per frame was tried
-//     first; the ribbon's distance measure |F| / |∇F| is not smooth enough across
-//     a texel for a conservative map at any affordable size — see the 1.1.0 notes.)
+//     bounded. (A longitude x latitude coverage map baked per frame was tried
+//     first; the ribbon's distance measure |F| / |grad F| is not smooth enough across
+//     a texel for a conservative map at any affordable size, see the 1.1.0 notes.)
 //   - TEMPORAL ACCUMULATION (AuroraBlit pass 4): the renderer rotates the sample
 //     offsets each frame (_TemporalOffset: a golden-ratio shift of the blue-noise
 //     value, which keeps its spatial distribution) and tilts every ray by a
@@ -39,8 +39,8 @@
 //     a third target: the density-weighted mean distance of what it saw, which
 //     the reprojection uses as the pixel's depth.
 //   - _StepFilter: the fraction of the step the noise is filtered to (it was a
-//     constant ¾). With accumulation on, a smaller value keeps finer rays with
-//     coarser steps — the aliasing a single frame shows is what the accumulation
+//     constant 3/4). With accumulation on, a smaller value keeps finer rays with
+//     coarser steps, since the aliasing a single frame shows is what the accumulation
 //     averages away.
 //   The temporal globals (_RayJitter, _TemporalOffset) are set per draw by the
 //   renderer's command buffer, not on the material: the scaled-space instances copy
@@ -48,12 +48,12 @@
 //
 // v3 changes
 //   - Meander + flare come from a small lookup texture (_MeanderTex,
-//     longitude × band/hemisphere) that C# computes on the CPU each frame
+//     longitude x band/hemisphere) that C# computes on the CPU each frame
 //     (AuroraMeanderTexture.cs). Same math, but 6 of the 15 fbm calls per
 //     sample are gone, and the latitude gate is exact from the first test.
 //   - Step length is a function of distance from the camera (1.1.0: from
-//     _StepLength × _StepNear × R up close, growing by _StepGrowth per unit of
-//     distance, to _StepLength × _StepFarMul × R; _MaxSteps is a safety cap;
+//     _StepLength x _StepNear x R up close, growing by _StepGrowth per unit of
+//     distance, to _StepLength x _StepFarMul x R; _MaxSteps is a safety cap;
 //     per-pixel jittered) instead of "N steps
 //     per chord", so a thin shell on a big planet is sampled as finely as
 //     the Unity test scene and raising the height never thickens the layers.
@@ -65,12 +65,12 @@
 //     camera depth buffer, so terrain and the vessel occlude the aurora.
 //
 // v3.1 changes
-//   - Ribbon width is a true distance to the fold contour (|F|/|∇F|, with the
+//   - Ribbon width is a true distance to the fold contour (|F|/|grad F|, with the
 //     fold gradient from analytic noise derivatives): uniform thickness round
 //     every curl instead of thin runs + fat hairpins.
 //   - _BandSpacing / _BandIndependence: the three arcs no longer have to be
 //     nested parallel contours of one field.
-//   - Colour stops always blend over ≥ ±6 % of the height; the vertical
+//   - Colour stops always blend over >= +/-6 % of the height; the vertical
 //     envelope and the upper-band compression are smooth (no horizontal
 //     seams at fixed fractions of the height).
 //   - Output: rgb = aurora, a = aurora irradiance under the pixel, which the
@@ -114,29 +114,29 @@
 //   - The ray noise's octaves are rotated 37° against each other (and the
 //     two close-range octaves 61° further): thresholded value noise on one
 //     set of axes made square pillars with straight sides, plain to see
-//     from under the band. Ray / spike pattern only — the fold field and
+//     from under the band. Ray / spike pattern only: the fold field and
 //     its CPU twin are untouched, so the ribbon's path does not change.
 //
 // v3.12 changes
 //   - Two colour targets: the aurora met before the ray's first crossing of
 //     the cloud-top shell and the aurora met after it. The composite applies
 //     EVE's per-pixel cloud transmittance to the second only, so the clouds
-//     occlude exactly the aurora behind them at every altitude — no
+//     occlude exactly the aurora behind them at every altitude, with no
 //     composite-order switch.
 //
 // v3.11 changes
 //   - The emission bake takes four sub-samples per texel with the noise
 //     filtered to ~3 km (as on screen) instead of to the texel; the minimum-
-//     width dimming is applied after the ray threshold; cloud light gain ×4.
+//     width dimming is applied after the ray threshold; cloud light gain x4.
 //
 // v3.10 changes
 //   - The noise is filtered to the SAMPLE SPACING, not just the pixel: the
-//     footprint handed to fbmAA is max(pixel, ¾ step), and the band's bottom
+//     footprint handed to fbmAA is max(pixel, 3/4 step), and the band's bottom
 //     and top edges are never sharper than it. Content finer than the step
 //     cannot be integrated along the ray; sampled anyway it aliased into
 //     hard-edged blocks that jumped with the animation (seen from under the
-//     band, where 3 km steps met 1–2 km rays).
-//   - The step shrinks near the band (_StepNear × _StepLength as the march
+//     band, where 3 km steps met 1-2 km rays).
+//   - The step shrinks near the band (_StepNear x _StepLength as the march
 //     start comes within half a planet radius), so the detail that filtering
 //     removes far away is really sampled where it is large on screen.
 //
@@ -159,9 +159,9 @@ Shader "RVA/Aurora"
     {
         _Activity    ("Activity", Range(0, 1)) = 0.3
 
-        _ColorLow    ("Color (low — green)",  Color) = (0.4, 0.9, 0.5, 1)
-        _ColorMid    ("Color (mid — blue)",   Color) = (0.4, 0.2, 0.9, 1)
-        _ColorHigh   ("Color (high — pink)",  Color) = (0.9, 0.3, 0.5, 1)
+        _ColorLow    ("Color (low, green)",  Color) = (0.4, 0.9, 0.5, 1)
+        _ColorMid    ("Color (mid, blue)",   Color) = (0.4, 0.2, 0.9, 1)
+        _ColorHigh   ("Color (high, pink)",  Color) = (0.9, 0.3, 0.5, 1)
 
         // Vertical colour layout, in 0..1 of the band height:
         //   pure green up to _GreenTop, fades to blue by _BlueBottom, pure blue
@@ -181,7 +181,7 @@ Shader "RVA/Aurora"
         // Ray contrast: density = saturate((pattern - threshold) * gain)
         _RayThreshold   ("Ray threshold (higher = sparser)", Range(0, 0.6)) = 0.3
         _RayGain        ("Ray contrast (higher = crisper)", Range(0.5, 5)) = 1.4
-        // The threshold rises with height (by 0.2 × taper at the top): each
+        // The threshold rises with height (by 0.2 x taper at the top): each
         // column is widest at its base and narrows to a tip at the top, the
         // way real rays are crisp and broad at the lower border and fade to
         // thin tips above. Brightness profile and colours are untouched.
@@ -206,14 +206,14 @@ Shader "RVA/Aurora"
 
         _LatCenter   ("Latitude center", Range(0, 1)) = 0.65
         _LatWidth    ("Ribbon half-width", Range(0, 0.6)) = 0.03
-        // The ribbon is the zero contour of  lat − centre + fold(x,z): contours
+        // The ribbon is the zero contour of  lat - centre + fold(x,z): contours
         // of a noise field curl, fold and wrap back on themselves. Its width is
-        // measured as a true distance to that contour (|F| / |∇F|), so the
+        // measured as a true distance to that contour (|F| / |grad F|), so the
         // ribbon is equally thick in its straight runs and in its hairpins.
         _FoldStrength   ("Ribbon folds (amplitude)", Range(0, 0.3)) = 0.12
         _FoldScale      ("Ribbon fold scale", Range(0.2, 4)) = 1.0
         // The three bands: spacing scales their latitude offsets (0 = all on one
-        // line, 1 = original ±4.5°); independence rotates each band's fold field
+        // line, 1 = original +/-4.5°); independence rotates each band's fold field
         // away from the shared one, so the bands cross and merge instead of
         // running as nested contour lines (0 = parallel copies, 1 = each alone)
         _BandSpacing    ("Band spacing", Range(0, 2)) = 1.0
@@ -233,8 +233,8 @@ Shader "RVA/Aurora"
         _RayScale       ("Ray fineness", Range(0.5, 6)) = 2.5
         // Height (0..1 of band) over which the bottom edge fades in: small = crisp lower border
         _BottomSoftness ("Bottom edge softness", Range(0.02, 0.3)) = 0.07
-        // Band thickness varies along the band: width × (1 ± variance)
-        _WidthVariance  ("Band width variance", Range(0, 3)) = 0.0   // inspector range only (v3.23b); the plugin sets it unclamped — no rebuild needed for the wider slider
+        // Band thickness varies along the band: width x (1 +/- variance)
+        _WidthVariance  ("Band width variance", Range(0, 3)) = 0.0   // inspector range only (v3.23b); the plugin sets it unclamped, no rebuild needed for the wider slider
         // How much the local top height varies along the band (1 = 30..100 % of
         // AltTop, the original look; 0 = flat top)
         _HeightVariance ("Band height variance", Range(0, 1)) = 1.0
@@ -246,7 +246,7 @@ Shader "RVA/Aurora"
 
         _SphereRadius ("Sphere radius", Float) = 10.0
         // 1.1.0, another body's aurora drawn from here: a sphere that hides it (the body the
-        // vessel is at — xyz relative to this aurora's planet centre, w = radius; w = 0 none)
+        // vessel is at: xyz relative to this aurora's planet centre, w = radius; w = 0 none)
         _Occluder     ("Occluder sphere (set by C#)", Vector) = (0, 0, 0, 0)
         // 1.1.0: 1 = every sample counts as beyond the cloud tops (a distant body's aurora is
         // behind this world's clouds everywhere), so the composite occludes all of it per pixel
@@ -263,29 +263,29 @@ Shader "RVA/Aurora"
         // noise is always filtered to the step, so coarse steps mean smooth
         // rays, never blocks.
         _StepNear    ("Step scale near the band", Range(0.1, 1)) = 0.25
-        // 1.1.0: the step grows with distance from the camera — dt = clamp(_StepGrowth × t,
-        // _StepLength × _StepNear × R, _StepLength × _StepFarMul × R) — and no longer depends on
+        // 1.1.0: the step grows with distance from the camera, dt = clamp(_StepGrowth x t,
+        // _StepLength x _StepNear x R, _StepLength x _StepFarMul x R), and no longer depends on
         // the ray's total length through the shell (which made neighbouring rays sample the
         // same aurora at very different densities: the seam along the band's lower horizon).
         _StepGrowth  ("Step growth per unit distance", Range(0, 0.1)) = 0.03
-        _StepFarMul  ("Far step (× step length)", Range(1, 8)) = 3
+        _StepFarMul  ("Far step (x step length)", Range(1, 8)) = 3
         _MaxSteps    ("Max steps per ray", Range(8, 512)) = 192
         _Jitter      ("Sample jitter", Range(0, 1)) = 0.75
         // 1.1.0: the per-pixel offset comes from this blue-noise tile when the plugin
         // supplies one (AuroraBlueNoise.cs); gradient noise otherwise. Under-sampled
-        // features show the offset pattern through — gradient noise as stripes, blue
+        // features show the offset pattern through: gradient noise as stripes, blue
         // noise as grain the upsample smooths away.
         _BlueNoise   ("Blue-noise tile (set by C#)", 2D) = "gray" {}
         _BlueNoiseOn ("1 = use the tile", Float) = 0.0
-        // 1.1.0: the noise is filtered to this fraction of the march step (it was a constant ¾):
+        // 1.1.0: the noise is filtered to this fraction of the march step (it was a constant 3/4):
         // content finer than the sample spacing cannot be integrated and aliases into blocks.
         // With the temporal accumulation on, lower values keep finer rays at coarser steps.
-        _StepFilter  ("Noise filter width (× step)", Range(0.2, 1.5)) = 0.75
+        _StepFilter  ("Noise filter width (x step)", Range(0.2, 1.5)) = 0.75
 
         _Brightness  ("Brightness", Range(0, 40)) = 8.0
 
 
-        // Longitude × (band, hemisphere) lookup: R = meander shift + 0.5,
+        // Longitude x (band, hemisphere) lookup: R = meander shift + 0.5,
         // G = flare 0..1. Generated by AuroraMeanderTexture.cs. Gray = neutral.
         _MeanderTex  ("Meander/flare LUT (set by C#)", 2D) = "gray" {}
 
@@ -295,7 +295,7 @@ Shader "RVA/Aurora"
         // Aurora irradiance on the cloud deck under each pixel, written to the
         // output ALPHA (AuroraBlit pass 2 multiplies it onto EVE's clouds).
         // It is read from the EMISSION MAP: pass 1 of this shader bakes the
-        // aurora's own visible density into a small longitude × latitude
+        // aurora's own visible density into a small longitude x latitude
         // texture every frame, and the irradiance is that map blurred by
         // _CloudLightBlur (its mip chain does the blurring). So the glow sits
         // exactly where the curtains are, bright under bright curtains, gone
@@ -312,7 +312,7 @@ Shader "RVA/Aurora"
         _CloudTopAlt   ("Cloud top altitude (set by C#)", Float) = 0.0
         // 1 = the aurora beyond the first crossing of the cloud-top shell goes
         // to the second colour target (the composite occludes it with EVE's
-        // cloud transmittance) — set by the KSP renderer, which binds two
+        // cloud transmittance), set by the KSP renderer, which binds two
         // targets; 0 = everything to the first (Unity test scene, direct mode)
         _FarSplit      ("Split at the cloud shell (0 or 1)", Float) = 0.0
         // Sun direction (world space, unit length, w = 1 when valid). Set by
@@ -369,7 +369,7 @@ Shader "RVA/Aurora"
             float  _StepLength, _StepNear, _MaxSteps, _Jitter, _StepGrowth, _StepFarMul, _StepFilter;
             sampler2D _BlueNoise;
             float  _BlueNoiseOn;
-            // 1.1.0 temporal accumulation — GLOBALS, set per draw by AuroraRenderer's command buffer (see the header)
+            // 1.1.0 temporal accumulation: GLOBALS, set per draw by AuroraRenderer's command buffer (see the header)
             float4    _RayJitter;        // sub-pixel ray tilt: xy = (right, up) per unit of forward; 0 = none
             float     _TemporalOffset;   // per-frame shift of the sample offsets (0 = the static pattern)
             float4 _SunDir;
@@ -399,9 +399,9 @@ Shader "RVA/Aurora"
 
             // ---------- noise (AuroraNoise.cs / AuroraLightRing.cs: line-for-line ports)
             // Lattice hash (v3.20): integer arithmetic on the lattice point, so a
-            // corner hashes to the same value whichever cell asks for it — exact on
+            // corner hashes to the same value whichever cell asks for it, exact on
             // every GPU, and on the CPU twins. The float hash it replaces,
-            // frac(p × K) feeding a product, turned a one-ulp difference in how a
+            // frac(p x K) feeding a product, turned a one-ulp difference in how a
             // corner coordinate was formed into an unrelated value, and a driver is
             // free to form the "i + 1" corners of one cell differently from the
             // "i" corners of the next: the field was discontinuous across lattice
@@ -479,8 +479,8 @@ Shader "RVA/Aurora"
                 px = max(px, 1e-6);
                 for (int i = 0; i < 3; i++)
                 {
-                    float fade = saturate((size / px - 1.0) * 0.5);   // full at ≥ 3 px, gone at ≤ 1 px
-                    // an octave faded all the way out contributes exactly amp × 0.5:
+                    float fade = saturate((size / px - 1.0) * 0.5);   // full at >= 3 px, gone at <= 1 px
+                    // an octave faded all the way out contributes exactly amp x 0.5:
                     // don't evaluate the noise for it (v3.18, identical result)
                     if (fade > 0.0) v += amp * lerp(0.5, noise3(p), fade);
                     else            v += amp * 0.5;
@@ -541,14 +541,14 @@ Shader "RVA/Aurora"
             // horizontal position, plus its gradient w.r.t. that position
             // (.yzw = d/dx, d/dy, d/dz). One fold field for all bands; each band
             // samples it through its own rotated + shifted domain, scaled by
-            // _BandIndependence (0 = the same field for all three → nested
+            // _BandIndependence (0 = the same field for all three -> nested
             // parallel contours, 1 = three uncorrelated fields that cross and
             // merge). A rotation never collapses or stretches the field, so
             // every independence value gives folds of the same size.
             // AuroraNoise.Fold is the CPU twin (value only).
             // 1.1.0: the field is sampled at the point on the planet's surface (radius
             // 10) under the sample, in 3D, not at its projection onto the equatorial
-            // plane as before — that projection squeezed the poleward direction by
+            // plane as before. That projection squeezed the poleward direction by
             // sin(latitude), stretching every curl and ray more and more toward the
             // equator, which a storm that reaches the equator could not hide.
             float4 foldAt(float3 sP, float t, float hemi, float seedOffset, float foldStrength)
@@ -571,12 +571,12 @@ Shader "RVA/Aurora"
 
             // Arc-length distance (internal units, 1 = R/10) from a point at
             // normalised latitude `lat`, projected horizontal position hpN, to
-            // the ribbon's centre line F = lat − centre + fold = 0, using the
-            // gradient of F: |F| / |∇F|. Without this the ribbon is only as
+            // the ribbon's centre line F = lat - centre + fold = 0, using the
+            // gradient of F: |F| / |grad F|. Without this the ribbon is only as
             // wide as its *latitude* gate, i.e. thin where the fold is steep and
             // a fat blob at every hairpin.
             // Everything about a sample point that does not depend on which band
-            // is being evaluated — computed once per sample in auroraField and
+            // is being evaluated, computed once per sample in auroraField and
             // handed to the three bands (v3.18; it used to be recomputed, trig
             // included, in each of them).
             struct SampleGeo
@@ -595,8 +595,8 @@ Shader "RVA/Aurora"
 
             float ribbonDistance(float F, float4 fold, SampleGeo geo)
             {
-                // (east, poleward) components of ∇F on the surface, latNorm per unit of
-                // arc length: latitude rises 1/(10·π/2) per unit poleward, plus the fold's
+                // (east, poleward) components of grad F on the surface, latNorm per unit of
+                // arc length: latitude rises 1/(10 * pi/2) per unit poleward, plus the fold's
                 // own slope along each direction
                 float  gE = dot(fold.yzw, geo.east3);
                 float  gN = dot(fold.yzw, geo.north3);
@@ -613,7 +613,7 @@ Shader "RVA/Aurora"
             // foldCache / foldCached: with _BandIndependence = 0 the three bands
             // sample one and the same fold field, so the first band to need it
             // computes it and the others reuse it (bit-identical: the rotation
-            // is by 0 and the offset is × 0).
+            // is by 0 and the offset is x 0).
             // What a ribbon is made of, apart from where it is (1.1.0): the three
             // polar arcs pass the uniforms unchanged (mainTweak); anything that wants
             // a thinner ribbon, a fold of its own size or no meander shift passes its own.
@@ -621,9 +621,9 @@ Shader "RVA/Aurora"
             {
                 float latWidth;      // half-width, latNorm units
                 float foldStrength;  // fold amplitude, latNorm units
-                float foldZoom;      // the fold field is sampled at hpN × this (curls this many times smaller)
-                float shiftScale;    // × the LUT's meander shift (0 = none)
-                float widthVar;      // width × (1 ± this) along the ribbon
+                float foldZoom;      // the fold field is sampled at hpN x this (curls this many times smaller)
+                float shiftScale;    // x the LUT's meander shift (0 = none)
+                float widthVar;      // width x (1 +/- this) along the ribbon
                 float topSpread;     // widening toward the top
             };
             BandTweak mainTweak()
@@ -656,19 +656,19 @@ Shader "RVA/Aurora"
                 float4 lut  = tex2Dlod(_MeanderTex, float4(geo.lon01, rowV, 0, 0));
                 float bandShift = (lut.r - 0.5) * tw.shiftScale;
                 float flare     = lerp(0.7, 1.6, lut.g);
-                // local thickness: width × (1 ± variance), driven by slow noise along the band
+                // local thickness: width x (1 +/- variance), driven by slow noise along the band
                 float widthScale = lerp(1.0 - tw.widthVar, 1.0 + tw.widthVar, lut.b);
                 float localWidth = tw.latWidth * max(widthScale, 0.15);
 
                 // FINE LATITUDE GATE (1.1.0): the same geometric bound auroraField's pre-gate
-                // applies — the ribbon lies within its half-width of a centre line that the
-                // fold moves by at most ±0.65 × its amplitude — but around the centre as the
-                // meander actually shifts it here (the LUT above), not the nominal centre ± the
-                // meander's whole ±0.225 range, and with this longitude's own width rather than
+                // applies (the ribbon lies within its half-width of a centre line that the
+                // fold moves by at most +/-0.65 x its amplitude), but around the centre as the
+                // meander actually shifts it here (the LUT above), not the nominal centre +/- the
+                // meander's whole +/-0.225 range, and with this longitude's own width rather than
                 // the widest. Also the pixel minimum the ribbon is widened to when it is far
-                // away (never thinner than 1.5 px — wMin below). At the shipped folds about
+                // away (never thinner than 1.5 px, wMin below). At the shipped folds about
                 // half the near-miss samples end here, before the fold noise. Conservative in
-                // the same sense as the pre-gate: the ribbon's own measure |F| / |∇F| could
+                // the same sense as the pre-gate: the ribbon's own measure |F| / |grad F| could
                 // reach past this bound only where the fold sits near an extreme and is steep
                 // at the same time, which smooth noise does not do.
                 {
@@ -678,9 +678,9 @@ Shader "RVA/Aurora"
                 }
 
                 // Ribbon folds. The ribbon is the zero contour of
-                //     F = latNorm − (centre + meander) + fold(x, z)
+                //     F = latNorm - (centre + meander) + fold(x, z)
                 // A contour of a smooth noise field curls, folds and wraps back
-                // on itself — the ISS-photo look a single-valued centre line
+                // on itself, the ISS-photo look a single-valued centre line
                 // can never give. dist is the true arc distance to that contour
                 // (internal units), so the ribbon keeps one thickness all the
                 // way round its curls. AuroraLightRing/AuroraNoise.Fold is the CPU twin.
@@ -704,10 +704,10 @@ Shader "RVA/Aurora"
                 float  dist  = ribbonDistance(F, fold, geo);
 
                 // EXACT EARLY-OUT (v3.18, tightened v3.19): the cross-section
-                // gate below is zero whenever dist ≥ wEff. wEff grows with
+                // gate below is zero whenever dist >= wEff. wEff grows with
                 // altNormRaw = altitude / localCeiling, and the ceiling noise can
-                // lower the ceiling to no less than internalAltTop × (1 − 0.7 ×
-                // _HeightVariance) — so at this altitude altNormRaw is at most
+                // lower the ceiling to no less than internalAltTop x (1 - 0.7 x
+                // _HeightVariance), so at this altitude altNormRaw is at most
                 // altitude / that floor, and wEff at most the width for that
                 // value (or the pixel minimum). A sample farther from the
                 // contour than that is empty before the ceiling noise is even
@@ -735,7 +735,7 @@ Shader "RVA/Aurora"
                 // (the diffuse cap). Edge sharpness 0 = the old soft falloff,
                 // 1 = plateau with a thin anti-aliased rim.
                 float altNormRaw = saturate(altitude / localCeiling);
-                // half-width in internal arc units (1 latNorm = 10·π/2 units)
+                // half-width in internal arc units (1 latNorm = 10 * pi/2 units)
                 float wEff   = localWidth * (1.0 + tw.topSpread * altNormRaw * altNormRaw) * 15.70796;
                 // Never thinner than ~1.5 pixels: widen and dim in proportion so a
                 // distant ribbon stays a smooth line instead of a broken jaggy one.
@@ -765,7 +765,7 @@ Shader "RVA/Aurora"
                 }
 
                 // Spikes: isolated thin columns rooted inside the band, with
-                // their own density — the band's own top is NOT stretched, so
+                // their own density. The band's own top is NOT stretched, so
                 // the body never curves up into them. Column mask = cubed
                 // excess over the threshold (sharp, sparse); the taller the
                 // mask, the higher the column, so each spike comes to a point.
@@ -808,18 +808,18 @@ Shader "RVA/Aurora"
                 float thrH = _RayThreshold + _RayTaper * 0.2 * altNorm;
 
                 // EXACT EARLY-OUTS (v3.19). The body density is
-                //     saturate((rayPattern × latGate × flicker − thrH) × _RayGain)
+                //     saturate((rayPattern x latGate x flicker - thrH) x _RayGain)
                 // and every factor is bounded: fbm and fbmAA stay below 1.000125
-                // (three octaves of value noise in [0, 1), × 1.143 × 0.875), so
-                // basePattern < 0.6501, upperPattern < 1.0002 + 0.225 × |detail|
-                // (the detail term is (d − 0.5) × detail × 0.45 with d in [0, 1)),
-                // rayPattern — their lerp, with a mix in [0, 1] for |_RayZone| ≤ 1
-                // — no more than the larger of the two, and flicker < 1.0001.
+                // (three octaves of value noise in [0, 1), x 1.143 x 0.875), so
+                // basePattern < 0.6501, upperPattern < 1.0002 + 0.225 x |detail|
+                // (the detail term is (d - 0.5) x detail x 0.45 with d in [0, 1)),
+                // rayPattern (their lerp, with a mix in [0, 1] for |_RayZone| <= 1)
+                // is no more than the larger of the two, and flicker < 1.0001.
                 // Where that ceiling cannot clear the threshold the body is
                 // exactly zero (for a non-negative gain) and none of its noise
                 // needs evaluating: first judged from latGate alone (the outer
                 // part of the ribbon's cross-section), then again once the
-                // pattern itself is known (below the threshold — the flicker and
+                // pattern itself is known (below the threshold, the flicker and
                 // green-region noise are skipped). The tail below then runs the
                 // same arithmetic with density 0, so the returned values are
                 // what the full evaluation would have returned.
@@ -830,7 +830,7 @@ Shader "RVA/Aurora"
                 {
                     // Vertical density envelope: crisp rise over _BottomSoftness,
                     // a slow decline to 62 % at 0.85, fade-out to the top. All
-                    // smooth — piecewise-linear segments put horizontal "strata"
+                    // smooth: piecewise-linear segments put horizontal "strata"
                     // across the band at fixed fractions of its height. Neither
                     // edge is ever sharper than the sample footprint (one march
                     // step, see frag): an edge the march cannot resolve shows as
@@ -865,7 +865,7 @@ Shader "RVA/Aurora"
                     float upperPattern = fbmAA(rayInput, rayCell, pxI);
 
                     // Close-range detail: two more octaves on the rays (horizontal
-                    // frequency ×7 and ×16, time only ×2 so it doesn't strobe),
+                    // frequency x7 and x16, time only x2 so it doesn't strobe),
                     // each fading out once it is finer than the pixel footprint.
                     // An octave faded all the way out is not evaluated (v3.18).
                     if (detail > 0.001)
@@ -877,7 +877,7 @@ Shader "RVA/Aurora"
                         {
                             // the two detail octaves are turned too (61° and 61° + 37°), see fbmAA
                             float3 r7 = rotXZ(raySpace, 0.4848096, 0.8746197);
-                            float3 dp = r7 * 7.0 + drift * (t * 0.6) + 11.7;     // space × 7, time × 2
+                            float3 dp = r7 * 7.0 + drift * (t * 0.6) + 11.7;     // space x 7, time x 2
                             float  d7 = lerp(0.5, noise3(dp), f7) * 0.6;
                             float  d16 = 0.5 * 0.4;
                             if (f16 > 0.0)
@@ -934,8 +934,8 @@ Shader "RVA/Aurora"
             // Returns (density, colour altitude, skip): skip > 0 means every
             // active arc rejected this sample at the latitude pre-gate, and it
             // is the distance along any ray (world units) within which they
-            // must keep rejecting it — latitude changes by at most 1 radian per
-            // radius of travel — so the march can jump that far over samples
+            // must keep rejecting it (latitude changes by at most 1 radian per
+            // radius of travel), so the march can jump that far over samples
             // that are exactly zero (v3.18).
             float3 auroraField(float3 pWorld, float t, float detail, float pxI, float envPx)
             {
@@ -949,40 +949,40 @@ Shader "RVA/Aurora"
                 if (g.altitude <= 0.0) return float3(0, 0.5, 0);
 
                 // Signed latitude (1.1.0): + north. Each hemisphere has its own set of
-                // three arcs, at +c and −c, each a smooth curve in its own right that
+                // three arcs, at +c and -c, each a smooth curve in its own right that
                 // may cross the equator when the storm takes it there. Until now the
                 // latitude was |lat|, which mirrored one set into both hemispheres and
                 // bent every arc into a cusp where it met its reflection at the equator.
                 float latS = asin(clamp(g.p.y / g.r, -1.0, 1.0)) / 1.5707963;
 
-                // CHEAP PRE-GATE: meander ±0.225, folds ±0.65·FoldStrength, width
-                // incl. variance and top spread — anything farther from the
+                // CHEAP PRE-GATE: meander +/-0.225, folds +/-0.65 * FoldStrength, width
+                // incl. variance and top spread. Anything farther from the
                 // nominal centre can never be in-band. Costs no noise at all.
                 float preGate = _LatWidth * (1.0 + _WidthVariance) * (1.0 + _TopSpread) + 0.23 + 0.65 * _FoldStrength + 0.01;
                 float c1Lat = _LatCenter;
                 float c2Lat = _LatCenter - 0.05 * _BandSpacing;
                 float c3Lat = _LatCenter + 0.04 * _BandSpacing;
                 bool  a2 = _Arc2Fade > 0.001, a3 = _Arc3Fade > 0.001;
-                float n1 = abs(latS - c1Lat) - preGate;                       // the northern set …
+                float n1 = abs(latS - c1Lat) - preGate;                       // the northern set ...
                 float n2 = a2 ? abs(latS - c2Lat) - preGate : 1e30;
                 float n3 = a3 ? abs(latS - c3Lat) - preGate : 1e30;
-                float s1 = abs(-latS - c1Lat) - preGate;                      // … and the southern
+                float s1 = abs(-latS - c1Lat) - preGate;                      // ... and the southern
                 float s2 = a2 ? abs(-latS - c2Lat) - preGate : 1e30;
                 float s3 = a3 ? abs(-latS - c3Lat) - preGate : 1e30;
                 float mN = min(n1, min(n2, n3)), mS = min(s1, min(s2, s3));
                 float mMin = min(mN, mS);
                 if (mMin > 0.0)
                 {
-                    // every active arc is out of range by mMin latNorm = mMin·π/2 rad;
-                    // the ray stays inside the band shell (r ≥ R + base) so that
+                    // every active arc is out of range by mMin latNorm = mMin * pi/2 rad;
+                    // the ray stays inside the band shell (r >= R + base) so that
                     // margin cannot close faster than 1 rad per (R + base) of travel
                     return float3(0, 0.5, mMin * 1.5707963 * (_SphereRadius + _AltBase) * 0.999);
                 }
 
                 g.lon01 = atan2(g.p.z, g.p.x) * 0.15915494 + 0.5;
                 // The point on the planet's surface under the sample (radius 10): every
-                // noise domain reads it, so anything built from it — folds, rays, spike
-                // columns, green-ray regions — stands exactly upright and looks the same
+                // noise domain reads it, so anything built from it (folds, rays, spike
+                // columns, green-ray regions) stands exactly upright and looks the same
                 // at every latitude (1.1.0; it used to be the projection onto the
                 // equatorial plane, which stretched everything toward the equator).
                 float3 sP = g.p * (10.0 / g.r);
@@ -998,7 +998,7 @@ Shader "RVA/Aurora"
                 float dSum = 0.0, aSum = 0.0;
                 // the two sets in a real loop: one copy of the three arc evaluations in
                 // the compiled code, not two (the compiler would otherwise inline six)
-                // … and the three arcs in a real loop inside it, so the compiled code
+                // ... and the three arcs in a real loop inside it, so the compiled code
                 // holds ONE copy of the arc evaluation instead of three (or six)
                 [loop]
                 for (int h = 0; h < 2; h++)
@@ -1030,9 +1030,9 @@ Shader "RVA/Aurora"
             }
 
             // ---------- color from altitude ------------------------------------
-            // green | green→blue | blue | blue→pink | pink, stops are user-set.
+            // green | green->blue | blue | blue->pink | pink, stops are user-set.
             // Each transition is a smoothstep centred between its two stops and
-            // never narrower than ±0.06 of the band height: when two stops sit
+            // never narrower than +/-0.06 of the band height: when two stops sit
             // on top of each other the colour used to switch hard at that
             // height, which reads as a horizontal layer inside the band.
             float3 auroraColor(float a)
@@ -1073,14 +1073,14 @@ Shader "RVA/Aurora"
             // first crosses the cloud-top shell (R + _CloudTopAlt) and the
             // aurora it meets AFTER. The composite multiplies only the second
             // by EVE's per-pixel cloud transmittance, so the clouds occlude the
-            // aurora behind them and not the aurora in front of them — from
+            // aurora behind them and not the aurora in front of them, from
             // every altitude, with no composite-order switch. near.a carries
             // the cloud irradiance.
             struct FragOut
             {
                 float4 near : SV_Target0;   // rgb aurora before the cloud shell, a irradiance
                 float4 far  : SV_Target1;   // rgb aurora beyond the cloud shell, a scene depth this texel used (km; 0 = none)
-                float4 aux  : SV_Target2;   // r = density-weighted mean distance of the aurora along this ray (world units; 0 = none) — 1.1.0, for the temporal reprojection
+                float4 aux  : SV_Target2;   // r = density-weighted mean distance of the aurora along this ray (world units; 0 = none), for the temporal reprojection (1.1.0)
             };
 
             // far.a carries the scene depth this texel's march was cut against
@@ -1102,7 +1102,7 @@ Shader "RVA/Aurora"
                 float3 ro = _WorldSpaceCameraPos - _PlanetCenter.xyz;
                 float3 rd = normalize(i.worldPos - ro);
                 // Temporal accumulation (1.1.0): tilt the ray by this frame's sub-pixel offset.
-                // _RayJitter.xy is the offset in units of the view direction (pixels × 2 tan(fov/2)
+                // _RayJitter.xy is the offset in units of the view direction (pixels x 2 tan(fov/2)
                 // / buffer size, computed by the renderer); y is in buffer rows, which run up the
                 // image when the projection is flipped (render texture) and down it otherwise.
                 if (abs(_RayJitter.x) + abs(_RayJitter.y) > 1e-12)
@@ -1125,7 +1125,7 @@ Shader "RVA/Aurora"
 
                 // Hollow below the band's bottom (R + AltBase): a ray may cross
                 // the shell, dive under the band and come back out on the far
-                // side. The march skips the hollow — gapStart/gapLen — so steps
+                // side. The march skips the hollow (gapStart/gapLen), so steps
                 // are never wasted there.
                 float gapStart = 1e30, gapLen = 0.0;
                 if (_AltBase > 0.0)
@@ -1146,7 +1146,7 @@ Shader "RVA/Aurora"
                     }
                 }
 
-                // Stop at the planet's near surface (analytic sphere — exact and
+                // Stop at the planet's near surface (analytic sphere, exact and
                 // precise at any distance)
                 float tPlanet = -1.0;
                 {
@@ -1166,7 +1166,7 @@ Shader "RVA/Aurora"
                 }
 
                 // Stop at the occluder sphere (1.1.0): another body's aurora seen
-                // from the surface or orbit of this one — Jool's from Laythe. Exact,
+                // from the surface or orbit of this one, like Jool's from Laythe. Exact,
                 // at any distance, where the depth buffer is far too coarse.
                 if (_Occluder.w > 0.0)
                 {
@@ -1190,11 +1190,11 @@ Shader "RVA/Aurora"
 
                 // Stop at NEAR things the camera already drew in front (the
                 // vessel, terrain within ~5% of the planet radius = 30 km on
-                // Kerbin). Farther out the depth buffer is too coarse — it
-                // terraces into visible layers — and the analytic planet above
+                // Kerbin). Farther out the depth buffer is too coarse (it
+                // terraces into visible layers), and the analytic planet above
                 // already occludes correctly.
                 float tScene  = 1e30;
-                float depthKm = 0.0;      // → far.a for the depth-aware upsample
+                float depthKm = 0.0;      // -> far.a for the depth-aware upsample
                 bool  nearHit = false;
                 if (_UseSceneDepth > 0.5)
                 {
@@ -1205,7 +1205,7 @@ Shader "RVA/Aurora"
                     nearHit = sceneZ < _SphereRadius * 0.05;
                     // v3.24: the depth goes to the upsample only where the march can
                     // have been cut by it (the near 5 % of the radius above). Farther
-                    // depth — terrain seen from orbit, the sky — is 0 = "agrees with
+                    // depth (terrain seen from orbit, the sky) is 0 = "agrees with
                     // anything": the aurora was not clipped there, so there is no
                     // silhouette to keep, and the ground's coarse, fast-changing depth
                     // used to break the smoothing into per-texel grain on one side of
@@ -1218,8 +1218,8 @@ Shader "RVA/Aurora"
                     }
                 }
 
-                // Irradiance under this pixel (→ output alpha): the emission map
-                // (pass 1: the aurora's own visible density over longitude ×
+                // Irradiance under this pixel (-> output alpha): the emission map
+                // (pass 1: the aurora's own visible density over longitude x
                 // latitude) sampled at the receiving point and blurred by
                 // _CloudLightBlur through its mip chain. The composite
                 // multiplies it onto the clouds the frame contains, so the
@@ -1231,9 +1231,9 @@ Shader "RVA/Aurora"
                 // (1e30 = never): aurora before it goes to the near target, aurora
                 // beyond it to the far target (occluded by the clouds' transmittance
                 // in the composite). From above the tops that is the shell's near
-                // side — a ray grazing the limb meets the clouds first and the band
+                // side: a ray grazing the limb meets the clouds first and the band
                 // beyond the horizon after; from below, its exit on the way up.
-                float irr    = 0.0;    // irradiance under this pixel → near.a
+                float irr    = 0.0;    // irradiance under this pixel -> near.a
                 float tRecv  = -1.0;   // where that irradiance is evaluated
                 float tCloud = 1e30;
                 {
@@ -1276,13 +1276,13 @@ Shader "RVA/Aurora"
                         float  lon01 = atan2(pI.z, pI.x) * 0.15915494 + 0.5;
                         float  hemi  = (pI.y >= 0.0) ? 0.0 : 1.0;
                         // Receivers at or above the band's glow height get nothing
-                        // — they are lit by the aurora itself.
+                        // (they are lit by the aurora itself).
                         float  srcAlt = _AltBase + 0.45 * (_AltTop - _AltBase);
                         float  recAlt = max(rI - 10.0, 0.0) / internalScale;             // world units
                         float  heightFade = saturate((srcAlt - recAlt) / max(srcAlt * 0.3, 1e-5));
                         if (heightFade > 0.001)
                         {
-                            // blur radius → mip level: one map texel spans 0.9·(π/2)·R / (H/2) in latitude
+                            // blur radius -> mip level: one map texel spans 0.9 * (pi/2) * R / (H/2) in latitude
                             float texelWorld = 1.5707963 * 0.9 * _SphereRadius / max(_EmissionMapSize.y * 0.5, 1.0);
                             float lod  = clamp(log2(max(_CloudLightBlur, 1.0) / texelWorld), 0.0, 5.0);
                             float2 uvM = emissionMapUV(lon01, lat, hemi);
@@ -1297,7 +1297,7 @@ Shader "RVA/Aurora"
                             // A ribbon 30 km wide 40 km above the deck fills ~1.5 sr of
                             // the cloud's sky, so the deck directly under it receives
                             // about half the ribbon's radiance and a white cloud glows
-                            // at ~1/7 of it — ×4 puts _CloudLight = 1 there for the
+                            // at ~1/7 of it, x4 puts _CloudLight = 1 there for the
                             // shipped settings; 10 saturates.
                             irr = e * 0.25 * 4.0 * _CloudLight * night * heightFade;
                         }
@@ -1316,15 +1316,15 @@ Shader "RVA/Aurora"
                 if (_DebugMode > 1.5 && _DebugMode < 2.5)
                     return outNF(float3(0.0, 0.0, 2.0), float3(0, 0, 0), 1.0, depthKm, 0.0);
 
-                // Step size (1.1.0): a function of distance from the camera only —
-                //   dt(t) = clamp(_StepGrowth × t, dtMin, dtMax)
-                // dtMin = _StepLength × _StepNear × R up close (curtains overhead, the
+                // Step size (1.1.0): a function of distance from the camera only:
+                //   dt(t) = clamp(_StepGrowth x t, dtMin, dtMax)
+                // dtMin = _StepLength x _StepNear x R up close (curtains overhead, the
                 // camera inside the shell), growing with range like the pixel
-                // footprint does, dtMax = _StepLength × _StepFarMul × R far out. Until
+                // footprint does, dtMax = _StepLength x _StepFarMul x R far out. Until
                 // v1.0.1 one step size was spread over the whole ray and capped at
                 // _MaxSteps, so a ray running the full chord of the shell sampled
-                // the same aurora 10× coarser than its neighbour that dipped under
-                // the band — a seam along the band's lower horizon, and inside a
+                // the same aurora 10x coarser than its neighbour that dipped under
+                // the band: a seam along the band's lower horizon, and inside a
                 // 600 km shell (Jool) coarse enough for the sample shells to show
                 // as rings. Now neighbouring rays agree, and the budget (_MaxSteps)
                 // is a safety cap that only the longest grazing rays approach.
@@ -1345,7 +1345,7 @@ Shader "RVA/Aurora"
 
                 // Per-pixel sample offset: turns the remaining sample-plane
                 // banding into fine grain that the low-res upsample smooths away.
-                // Blue noise when the plugin supplies the tile (1.1.0) — the
+                // Blue noise when the plugin supplies the tile (1.1.0). The
                 // interleaved gradient noise used before is a fine diagonal grating,
                 // and wherever a feature is under-sampled (a far band's thin
                 // ribbons) that grating showed through as stripes.
@@ -1353,23 +1353,23 @@ Shader "RVA/Aurora"
                              ? tex2Dlod(_BlueNoise, float4(i.pos.xy * (1.0 / 64.0), 0, 0)).r
                              : frac(52.9829189 * frac(dot(i.pos.xy, float2(0.06711056, 0.00583715))));
                 // Temporal accumulation (1.1.0): the renderer shifts every pixel's offset by the
-                // same amount each frame (a golden-ratio sequence) — a Cranley–Patterson rotation,
-                // which keeps the blue noise blue — so successive frames sample different depths
+                // same amount each frame (a golden-ratio sequence), a Cranley-Patterson rotation
+                // which keeps the blue noise blue, so successive frames sample different depths
                 // and the history converges on the integral. 0 when accumulation is off.
                 jitter = frac(jitter + _TemporalOffset);
                 float offset = 0.5 + (jitter - 0.5) * _Jitter;
                 float tc = t + offset * clamp(grow * t, dtMin, dtMax);
 
                 // Scale-free integration: a full traverse of the shell at
-                // density 1 adds 0.6 — identical to the Unity-tuned baseline
-                // (shell 2.0 × old factor 0.3) at any planet size or height.
+                // density 1 adds 0.6, identical to the Unity-tuned baseline
+                // (shell 2.0 x old factor 0.3) at any planet size or height.
                 float kShell = 0.6 / shell;
                 float internalScale = 10.0 / _SphereRadius;
                 int   maxN = (int)max(_MaxSteps, 8.0);
-                float filt = clamp(_StepFilter, 0.2, 1.5);                 // 1.1.0: the noise filter's width as a fraction of the step (was ¾)
+                float filt = clamp(_StepFilter, 0.2, 1.5);                 // 1.1.0: the noise filter's width as a fraction of the step (was 3/4)
 
                 float3 colorNear = float3(0, 0, 0), colorFar = float3(0, 0, 0);
-                float  alpha = 0.0, tSum = 0.0;                            // tSum: Σ distance × contribution → the aux target's mean distance
+                float  alpha = 0.0, tSum = 0.0;                            // tSum: sum of distance x contribution -> the aux target's mean distance
                 float  time  = _AnimTime;
 
                 if (_DebugMode > 5.5 && _DebugMode < 6.5)
@@ -1410,18 +1410,18 @@ Shader "RVA/Aurora"
                     float  dtc = clamp(grow * tc, dtMin, dtMax);
                     float3 p   = ro + rd * tc;
                     // detail fades in inside ~3 planet-tenths (180 km on Kerbin),
-                    // is gone beyond 12 (720 km) — the Unity test camera never sees it
+                    // is gone beyond 12 (720 km); the Unity test camera never sees it
                     float detail = _DetailStrength * (1.0 - smoothstep(3.0, 12.0, tc * internalScale));
                     // Sample footprint, internal units: the pixel at this
-                    // distance, but never smaller than ¾ of the step. Noise
+                    // distance, but never smaller than 3/4 of the step. Noise
                     // finer than the sample spacing cannot be resolved along
-                    // the ray — it aliases, and because neighbouring pixels
+                    // the ray: it aliases, and because neighbouring pixels
                     // sample at correlated depths the aliasing is coherent:
                     // hard-edged blocks that jump as the noise animates. Fading
                     // those octaves out (fbmAA) leaves what the march can
                     // actually integrate; finer steps near the band bring the
                     // detail back where it is large on screen (v3.10).
-                    float stepI = dtc * filt * internalScale;                       // the filter's share of the step (¾ by default), internal units
+                    float stepI = dtc * filt * internalScale;                       // the filter's share of the step (3/4 by default), internal units
                     float pxI   = max(max(tc, 1.0) * _PixelAngle * internalScale, stepI);
                     float3 fld  = auroraField(p, time, detail, pxI, stepI);
                     if (fld.x > 0.001)
@@ -1449,7 +1449,7 @@ Shader "RVA/Aurora"
                         // Every arc rejected this sample at the latitude pre-gate
                         // with fld.z of room along the ray: that stretch is exactly
                         // zero, so jump to its end. Never across the hop over the
-                        // hollow — beyond it the latitude is anything (v3.18).
+                        // hollow, since beyond it the latitude is anything (v3.18).
                         // Land this pixel's own fraction of a step PAST the end,
                         // not exactly on it (1.1.0): rays that all land on the same
                         // bound (a latitude cone) lose their jitter and march on
@@ -1469,7 +1469,7 @@ Shader "RVA/Aurora"
             }
             // ---------- emission map (pass 1) ------------------------------
             // Bakes the aurora's visible density (auroraField, three altitudes)
-            // into a longitude × latitude texture: u = longitude, v = latNorm
+            // into a longitude x latitude texture: u = longitude, v = latNorm
             // 0.1..1 of the north (top half) or south (bottom half) polar cap.
             // The map's mip chain is the blur the cloud light samples.
             // Position goes out as a separate SV_POSITION so VPOS can be read in the fragment
@@ -1479,17 +1479,17 @@ Shader "RVA/Aurora"
             {
                 v2fMap o;
                 o.dummy = float2(0, 0);
-                outpos  = float4(v.vertex.xy, 0.5, 1.0);   // a ±1 quad covers the whole target
+                outpos  = float4(v.vertex.xy, 0.5, 1.0);   // a +/-1 quad covers the whole target
                 return o;
             }
 
             float4 fragEmission (v2fMap i, UNITY_VPOS_TYPE screenPos : VPOS) : SV_Target
             {
-                // Four sub-samples per texel (rotated grid) × three altitudes,
-                // with the noise filtered to ~3 km as it is on screen — NOT to
+                // Four sub-samples per texel (rotated grid) x three altitudes,
+                // with the noise filtered to ~3 km as it is on screen, NOT to
                 // the 13 km texel. Filtered to the texel, the ray pattern sat
                 // at its mean and the ray threshold removed the rays' share
-                // (the upper band came out ~4× too dark; the base pattern
+                // (the upper band came out ~4x too dark; the base pattern
                 // below it was unaffected). The texel's value is now the mean
                 // of the visible density across it (v3.11).
                 float  thick = max(_AltTop - _AltBase, 1e-5);
@@ -1515,7 +1515,7 @@ Shader "RVA/Aurora"
                     // ("unrolled loop is too large"), and when an [unroll] fails
                     // inside a [loop] it reports the failure on the OUTER loop as
                     // "can't unroll loops marked with loop attribute" (v3.18d).
-                    // One auroraField body in the code, run 4 × 3 times: the same
+                    // One auroraField body in the code, run 4 x 3 times: the same
                     // arithmetic in the same order as unrolled, pixel for pixel.
                     [loop]
                     for (int j = 0; j < 4; j++)
@@ -1538,7 +1538,7 @@ Shader "RVA/Aurora"
             }
         ENDCG
 
-        // 0: the aurora — near / far of the cloud-top shell into two targets
+        // 0: the aurora, near / far of the cloud-top shell into two targets
         //    (and, in near.a, the cloud irradiance)
         Pass
         {

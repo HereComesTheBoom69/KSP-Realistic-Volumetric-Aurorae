@@ -1,4 +1,4 @@
-// Realistic Volumetric Aurorae (RVA) — Copyright (c) 2026 HereComesTheBoom ("Realistic Volumetric Aurorae")
+// Realistic Volumetric Aurorae (RVA). Copyright (c) 2026 HereComesTheBoom ("Realistic Volumetric Aurorae")
 // SPDX-License-Identifier: CC-BY-NC-SA-4.0  (see LICENSE.txt)
 using System.Text;
 using UnityEngine;
@@ -6,13 +6,13 @@ using UnityEngine.Rendering;
 
 /// <summary>
 /// Renders the aurora at reduced resolution and composites it onto KSP's
-/// flight camera — with command buffers, no extra camera, no layers.
+/// flight camera, with command buffers, no extra camera, no layers.
 ///
 /// Every frame, right before the flight camera culls, the buffers are rebuilt:
 ///   RENDER: target a low-res ARGBHalf render texture, clear it, draw a small
 ///     sphere pinned to the camera with the aurora material (the raymarch only
 ///     needs a ray direction per pixel). Runs at the composite event when that
-///     is earlier than AfterForwardAlpha, otherwise at AfterForwardAlpha — the
+///     is earlier than AfterForwardAlpha, otherwise at AfterForwardAlpha. The
 ///     camera depth texture is valid at both, and must be: the shader clips at
 ///     it for vessel / terrain occlusion.
 ///   COMPOSITE: blit that texture onto the camera target with the AuroraBlit
@@ -24,20 +24,20 @@ using UnityEngine.Rendering;
 ///     it exactly where they are. DumpCameraInfo() logs every camera and every
 ///     command buffer on the flight camera (where EVE and Scatterer hook in).
 ///
-///   v3.23: the aurora lights nothing — no point lights, no cloud light, no
+///   v3.23: the aurora lights nothing. No point lights, no cloud light, no
 ///     ambient. It is the volumetric glow only.
 ///
 ///   1.1.0 TEMPORAL ACCUMULATION (optional, per body): each frame the march's rays
 ///     are tilted by a sub-pixel offset and its sample offsets are shifted, and the
 ///     blit shader's pass 4 averages the frames into a pair of history buffers
-///     (near / far, up to 2× the render buffers' size) reprojected through the
+///     (near / far, up to 2x the render buffers' size) reprojected through the
 ///     camera's motion relative to the planet. The composite then reads the
 ///     history. Lets the render scale and the step count come down for the same
 ///     converged picture. The per-draw state (_RayJitter, _TemporalOffset) is set
 ///     as shader GLOBALS from the command buffer, not on the material: the
 ///     scaled-space instances copy the local material every frame.
 ///
-/// Camera choice: KSP normally renders flight with two cameras — "Camera 01"
+/// Camera choice: KSP normally renders flight with two cameras: "Camera 01"
 /// (far, terrain) then "Camera 00" (near, vessel; clears depth). Scatterer's
 /// unified-camera mode disables Camera 01 and lets Camera 00 cover the whole
 /// range. We composite on whichever of the two actually renders the far scene.
@@ -58,7 +58,7 @@ public class AuroraRenderer : MonoBehaviour
     public Material auroraMaterial;
     [Tooltip("Name of the camera to render on; empty = the flight camera (Camera 01, or Camera 00 in Scatterer's unified mode). The map view / tracking station instance uses 'Camera ScaledSpace'.")]
     public string   cameraName;
-    [Tooltip("When set, this material is copied into auroraMaterial every frame and its world-unit values are multiplied by syncScale — the scaled-space instance follows the local one (same storm, same animation time, same sun).")]
+    [Tooltip("When set, this material is copied into auroraMaterial every frame and its world-unit values are multiplied by syncScale: the scaled-space instance follows the local one (same storm, same animation time, same sun).")]
     public Material syncFrom;
     public float    syncScale = 1f;
     [Tooltip("False = stay attached but draw nothing (the map-view instance outside the map).")]
@@ -74,7 +74,7 @@ public class AuroraRenderer : MonoBehaviour
     public bool  flipY = false;
     [Tooltip("0 = plain bilinear upsample, 1 = 5-tap smoothed (hides jitter grain / blockiness)")]
     public float smoothing = 0.5f;
-    [Tooltip("Depth-aware upsample: screen pixels only blend buffer texels whose scene depth agrees with their own — crisp vessel / terrain silhouettes.")]
+    [Tooltip("Depth-aware upsample: screen pixels only blend buffer texels whose scene depth agrees with their own, for crisp vessel / terrain silhouettes.")]
     public bool  edgeAware = true;
     [Tooltip("Debug: replace the scene with the aurora buffer.")]
     public bool  auroraOnly = false;
@@ -82,13 +82,13 @@ public class AuroraRenderer : MonoBehaviour
     public int   compositeEvent = EvBeforeForwardAlpha;
     [Tooltip("EVE's volumetric clouds occlude the aurora per pixel: the aurora beyond the cloud-top shell is multiplied by their own transmittance (EVE's global 'colorBuffer'). No altitude switch needed.")]
     public bool  cloudOcclusion = true;
-    [Tooltip("How EVE's cloud buffer stores its alpha — 2 = transmittance (verified for the current volumetrics), 0 = opacity.")]
+    [Tooltip("How EVE's cloud buffer stores its alpha: 2 = transmittance (verified for the current volumetrics), 0 = opacity.")]
     public int   cloudBufferFormat = 2;
     [Tooltip("Flip EVE's cloud buffer vertically (only if the occlusion is upside-down).")]
     public bool  bufferFlipY = false;
     [Tooltip("Clip the aurora at the camera depth buffer (terrain / vessel occlusion).")]
     public bool  sceneDepthOcclusion = true;
-    [Tooltip("1.1.0: a sphere that hides this aurora — the body the vessel is at, when this is another body's aurora drawn on the flight camera. Null = none.")]
+    [Tooltip("1.1.0: a sphere that hides this aurora: the body the vessel is at, when this is another body's aurora drawn on the flight camera. Null = none.")]
     public Transform occluder;
     public float     occluderRadius;
     [Tooltip("1.1.0: every sample goes to the far target, i.e. behind this world's clouds everywhere (another body's aurora).")]
@@ -101,7 +101,7 @@ public class AuroraRenderer : MonoBehaviour
     public float temporalWeight = 0.9f;
     [Tooltip("History buffer size as a multiple of the render buffers (capped at the screen).")]
     public float temporalUpscale = 2f;
-    [Tooltip("History clamp, in standard deviations of the current frame's 3×3 neighbourhood. Lower = less ghosting, more flicker.")]
+    [Tooltip("History clamp, in standard deviations of the current frame's 3x3 neighbourhood. Lower = less ghosting, more flicker.")]
     public float temporalClamp = 2f;
 
     public bool   Initialized => initialized;
@@ -112,7 +112,7 @@ public class AuroraRenderer : MonoBehaviour
 
     Camera        farCam;
     RenderTexture rt, rtFar, rtAux;
-    RenderTargetIdentifier[] auroraTargets;     // { rt, rtFar, rtAux } — the aurora pass renders near / far of the cloud shell + its mean distance
+    RenderTargetIdentifier[] auroraTargets;     // { rt, rtFar, rtAux }: the aurora pass renders near / far of the cloud shell + its mean distance
     // 1.1.0: the temporal history (two sets, ping-pong)
     readonly RenderTexture[] histNear = new RenderTexture[2], histFar = new RenderTexture[2];
     readonly RenderTargetIdentifier[][] histTargets = new RenderTargetIdentifier[2][];
@@ -120,7 +120,7 @@ public class AuroraRenderer : MonoBehaviour
     bool          histValid;                     // the other set holds last frame's result
     int           lastRenderFrame = -10;         // Time.frameCount of the last frame this renderer drew
     int           temporalFrame;                 // counts drawn frames (drives the jitter sequences)
-    Matrix4x4     prevVP, curVP;                 // last frame's / this frame's projection × view × translate(planet centre)
+    Matrix4x4     prevVP, curVP;                 // last frame's / this frame's projection x view x translate(planet centre)
     bool          prevVPValid, curVPValid;
     bool          histWarned;
     Mesh          sphereMesh;
@@ -138,7 +138,7 @@ public class AuroraRenderer : MonoBehaviour
     string        cameraMode = "";
 
     // Sub-pixel offsets for the temporal accumulation: the first eight points of the
-    // Halton (2, 3) sequence, centred — every frame of the cycle lands on a different part
+    // Halton (2, 3) sequence, centred: every frame of the cycle lands on a different part
     // of the pixel, and the eight together cover it evenly.
     static readonly Vector2[] JitterSeq =
     {
@@ -271,15 +271,15 @@ public class AuroraRenderer : MonoBehaviour
         if (sceneDepthOcclusion) farCam.depthTextureMode |= DepthTextureMode.Depth;
         auroraMaterial.SetFloat("_UseSceneDepth", sceneDepthOcclusion ? 1f : 0f);
         // The flight camera renders into a texture (it already does whenever any
-        // image effect — Scatterer, TUFX — is active); kept from the versions that
+        // image effect (Scatterer, TUFX) is active); kept from the versions that
         // read the camera target back, so the composite path stays the one tested.
         // Flight camera only: the scaled-space camera is left exactly as KSP set it up.
         if (string.IsNullOrEmpty(cameraName)) farCam.forceIntoRenderTexture = true;
 
         Camera.onPreCull += OnAnyCameraPreCull;
 
-        if (blitShader == null)       { Log("No blit shader in bundle — direct full-res mode"); StartDirect(); return; }
-        if (!CreateRenderTextures())  { Log("Render texture creation failed — direct full-res mode"); StartDirect(); return; }
+        if (blitShader == null)       { Log("No blit shader in bundle, direct full-res mode"); StartDirect(); return; }
+        if (!CreateRenderTextures())  { Log("Render texture creation failed, direct full-res mode"); StartDirect(); return; }
 
         blitMaterial = new Material(blitShader);
         PushBlitParams();
@@ -371,7 +371,7 @@ public class AuroraRenderer : MonoBehaviour
         histValid = false;
     }
 
-    /// <summary>History buffers at temporalUpscale × the render buffers, capped at the screen.</summary>
+    /// <summary>History buffers at temporalUpscale x the render buffers, capped at the screen.</summary>
     bool EnsureHistory()
     {
         if (rt == null) return false;
@@ -397,7 +397,7 @@ public class AuroraRenderer : MonoBehaviour
 
     // ---------------------------------------------------------- attachment
     /// <summary>(Re)attach both buffers in canonical order, so that at a shared
-    /// event they run: render → composite.</summary>
+    /// event they run: render, then composite.</summary>
     void Attach()
     {
         Detach();
@@ -496,7 +496,7 @@ public class AuroraRenderer : MonoBehaviour
         float   tOff  = useTemporal ? Mathf.Repeat(0.6180340f * temporalFrame, 1f) : 0f;
         float   tanH  = tanV * cam.aspect;
 
-        // RENDER — rebuilt every frame: the mesh follows the camera and the RT may change.
+        // RENDER, rebuilt every frame: the mesh follows the camera and the RT may change.
         cbRender.Clear();
         // this frame's sub-pixel ray tilt and sample-offset shift (globals: see the header)
         cbRender.SetGlobalVector("_RayJitter", new Vector4(jit.x * 2f * tanH / rt.width, jit.y * 2f * tanV / rt.height, 0f, 0f));
@@ -533,7 +533,7 @@ public class AuroraRenderer : MonoBehaviour
             blitMaterial.SetVector("_CurTexelSize",   new Vector4(1f / rt.width, 1f / rt.height, rt.width, rt.height));
             blitMaterial.SetVector("_HistTexelSize",  new Vector4(1f / histNear[cur].width, 1f / histNear[cur].height, histNear[cur].width, histNear[cur].height));
             blitMaterial.SetVector("_TemporalJitter", new Vector4(jit.x, jit.y, 0f, 0f));
-            // reconstruction kernel σ = 0.45 render pixels → 1 / (2σ²)
+            // reconstruction kernel sigma = 0.45 render pixels, so 1 / (2 sigma^2)
             blitMaterial.SetVector("_TemporalParams", new Vector4(Mathf.Clamp(temporalWeight, 0f, 0.99f), Mathf.Max(temporalClamp, 0.1f), 2.469f, (histValid && prevVPValid) ? 1f : 0f));
             blitMaterial.SetVector("_CamPosRel",      new Vector4(camRel.x, camRel.y, camRel.z, 0f));
             blitMaterial.SetVector("_ShellParams",    new Vector4(shellMid, shellMid * 20f, 0f, 0f));
@@ -546,7 +546,7 @@ public class AuroraRenderer : MonoBehaviour
         cbRender.SetRenderTarget(BuiltinRenderTextureType.CameraTarget);
         curVP = vp; curVPValid = useTemporal;
 
-        // COMPOSITE — from the history when accumulating, else straight from the render buffers
+        // COMPOSITE: from the history when accumulating, else straight from the render buffers
         blitMaterial.SetTexture("_FarTex", compFar);
         cbBlit.Clear();
         cbBlit.Blit(compNear, BuiltinRenderTextureType.CameraTarget, blitMaterial, auroraOnly ? 1 : 0);
@@ -573,7 +573,7 @@ public class AuroraRenderer : MonoBehaviour
         blitMaterial.SetFloat("_CloudBufferFormat", cloudBufferFormat);
         blitMaterial.SetFloat("_CloudMinOpacity", 0f);
         blitMaterial.SetFloat("_CloudLightGain", 0f);
-        // _FarTex is bound per frame (the render buffer, or the history when accumulating — 1.1.0)
+        // _FarTex is bound per frame (the render buffer, or, since 1.1.0, the history when accumulating)
     }
 
     void Sync()
@@ -589,7 +589,7 @@ public class AuroraRenderer : MonoBehaviour
             UpdateStatus();
         }
         // 1.1.0: the history follows the render buffers and the upscale
-        if (temporal) { if (!EnsureHistory() && !histWarned) { histWarned = true; Log("Temporal history buffers could not be created — accumulation off"); } }
+        if (temporal) { if (!EnsureHistory() && !histWarned) { histWarned = true; Log("Temporal history buffers could not be created, accumulation off"); } }
         else if (histNear[0] != null) DropHistory();
 
         RefreshEvePresence(false);
@@ -613,7 +613,7 @@ public class AuroraRenderer : MonoBehaviour
             var now = FindTargetCamera(out string mode);
             if (now != null && now != farCam)
             {
-                Log($"Camera changed ('{farCam.name}' → '{now.name}', {mode}) — re-initialising");
+                Log($"Camera changed ('{farCam.name}' -> '{now.name}', {mode}), re-initialising");
                 Teardown();
                 initialized = false;
             }
@@ -625,7 +625,7 @@ public class AuroraRenderer : MonoBehaviour
         if (rt == null) return;
         int cc = CompositeEventCode();
         string clamped = cc != Clamp(compositeEvent) ? $" (asked for {NameOf(Clamp(compositeEvent))}: per-pixel cloud occlusion needs EVE's buffer, written at AfterForwardOpaque)" : "";
-        Status = $"low-res mode: RT {rt.width}x{rt.height} ×3 (scale {renderScale:F2}), render @ {NameOf(RenderEventCode())}, composite @ {NameOf(cc)}{clamped}, cloud occlusion {(OcclusionActive ? "per pixel (EVE buffer)" : cloudOcclusion ? "off (no EVE volumetrics on any camera)" : "off")}, mesh radius {radius:F0} m, camera '{farCam.name}' ({cameraMode}), depth occlusion {(sceneDepthOcclusion ? "on" : "off")}";
+        Status = $"low-res mode: RT {rt.width}x{rt.height} x3 (scale {renderScale:F2}), render @ {NameOf(RenderEventCode())}, composite @ {NameOf(cc)}{clamped}, cloud occlusion {(OcclusionActive ? "per pixel (EVE buffer)" : cloudOcclusion ? "off (no EVE volumetrics on any camera)" : "off")}, mesh radius {radius:F0} m, camera '{farCam.name}' ({cameraMode}), depth occlusion {(sceneDepthOcclusion ? "on" : "off")}";
     }
 
     /// <summary>1.1.0: the temporal history as it stands this frame (for the window).</summary>
@@ -634,14 +634,14 @@ public class AuroraRenderer : MonoBehaviour
         get
         {
             if (!initialized || directMode) return "";
-            return TemporalActive ? $"temporal history {histNear[0].width}x{histNear[0].height} ×2, weight {temporalWeight:F2}, clamp {temporalClamp:F1}σ{(histValid ? "" : " (filling)")}"
+            return TemporalActive ? $"temporal history {histNear[0].width}x{histNear[0].height} x2, weight {temporalWeight:F2}, clamp {temporalClamp:F1} sigma{(histValid ? "" : " (filling)")}"
                  : temporal ? "temporal history pending" : "temporal accumulation off";
         }
     }
 
     // ----------------------------------------------------------- diagnostics
     /// <summary>Every camera in the scene and every command buffer attached to
-    /// the flight camera, per event and in execution order — this is where EVE
+    /// the flight camera, per event and in execution order: this is where EVE
     /// and Scatterer hook in. Logged once at init and on demand from the window.</summary>
     public string DumpCameraInfo()
     {
@@ -655,7 +655,7 @@ public class AuroraRenderer : MonoBehaviour
             {
                 if (c == null || !c.gameObject.scene.IsValid()) continue;   // skip prefabs / assets
                 bool on = c.enabled && c.gameObject.activeInHierarchy;
-                if (!on) continue;   // the disabled ones are part/IVA prefabs — dozens of them, no information
+                if (!on) continue;   // the disabled ones are part/IVA prefabs: dozens of them, no information
                 sb.AppendLine($"  camera '{c.name}' depth {c.depth:F1} ENABLED near {c.nearClipPlane:F2} far {c.farClipPlane:F0} clear {c.clearFlags} HDR {c.allowHDR} target {(c.targetTexture != null ? c.targetTexture.name : "screen")} mask 0x{c.cullingMask:X8}");
                 // scripts on the camera object: this is where EVE / Scatterer / TUFX hook their per-frame work
                 var comps = c.GetComponents<Component>();

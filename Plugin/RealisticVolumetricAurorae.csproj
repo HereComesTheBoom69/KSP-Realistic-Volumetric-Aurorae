@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <!-- Realistic Volumetric Aurorae (RVA) — KSP 1.12 plugin: .NET Framework 4.8, references KSP's own DLLs from refs\ -->
+  <!-- Realistic Volumetric Aurorae (RVA), KSP 1.12 plugin: .NET Framework 4.8, references KSP's own DLLs from refs\ -->
   <PropertyGroup>
     <TargetFramework>net48</TargetFramework>
     <AssemblyName>RealisticVolumetricAurorae</AssemblyName>

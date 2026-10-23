@@ -1,4 +1,4 @@
-# Realistic Volumetric Aurorae — source repository ignores
+# Realistic Volumetric Aurorae: source repository ignores
 
 # Build outputs (any depth: Plugin/bin, Plugin/obj, Unity/obj ...)
 bin/

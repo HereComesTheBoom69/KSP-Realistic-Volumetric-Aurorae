@@ -1,4 +1,4 @@
-// Realistic Volumetric Aurorae (RVA) — Copyright (c) 2026 HereComesTheBoom ("Realistic Volumetric Aurorae")
+// Realistic Volumetric Aurorae (RVA). Copyright (c) 2026 HereComesTheBoom ("Realistic Volumetric Aurorae")
 // SPDX-License-Identifier: CC-BY-NC-SA-4.0  (see LICENSE.txt)
 using UnityEngine;
 
@@ -9,10 +9,10 @@ using UnityEngine;
 ///
 /// In Play mode the intensity is driven by a random storm scheduler: long
 /// quiet periods at 0, occasional storms that ramp up to a random peak,
-/// hold, then ramp back down (asymmetric — recovery is slower than onset).
+/// hold, then ramp back down (asymmetric: recovery is slower than onset).
 /// 1.1.0: the clock is real time and each body's sequence lives for the whole
-/// game session (see Seed), so a storm is a rare event — 45 minutes apart on
-/// average — that a scene change does not postpone.
+/// game session (see Seed), so a storm is a rare event (45 minutes apart on
+/// average) that a scene change does not postpone.
 ///
 /// In Edit mode the scheduler is paused; drag "Current Storm Intensity"
 /// (or tick Manual Override in Play mode) to preview any storm level.
@@ -56,7 +56,7 @@ public class AuroraStormScheduler : MonoBehaviour
     public float baseFoldStrength = 0.12f, stormFoldStrength = 0.12f;   // 1.1.0: _FoldStrength at quiet / at peak (ConfigureStorm)
     public float arc2Threshold    = 0f,    arc3Threshold     = 0f;      // intensity at which the 2nd / 3rd arc is fully in (fades over 0.15 below); 0 = always on
 
-    [Header("Storm timing (seconds, real time — unaffected by physics warp)")]
+    [Header("Storm timing (seconds, real time, unaffected by physics warp)")]
     [Tooltip("Average seconds between storms. Exponentially distributed with a floor of 40 % of the mean, so two storms never come back to back. 1.1.0: 45 minutes.")]
     public float averageQuietDuration = 2700f;
     [Tooltip("How strong a storm peaks (random per event). 0.4 = mild, 1.0 = severe.")]
@@ -78,8 +78,8 @@ public class AuroraStormScheduler : MonoBehaviour
 
     // ---- the storm sequence (1.1.0: outlives the scene) ------------------------------------
     /// <summary>One body's place in its storm sequence, with its own RNG (so storm timing never
-    /// touches UnityEngine.Random, which other mods share). Kept in a static table by seed — the
-    /// save's seed ^ the body's name — so a revert, a vessel switch, the tracking station, the VAB
+    /// touches UnityEngine.Random, which other mods share). Kept in a static table by seed (the
+    /// save's seed ^ the body's name), so a revert, a vessel switch, the tracking station, the VAB
     /// all resume the same sequence and the next storm is as far away as it was; switching saves
     /// gives each save its own.</summary>
     class Sequence
@@ -94,7 +94,7 @@ public class AuroraStormScheduler : MonoBehaviour
     Sequence seq = new Sequence();               // a private one until Seed() attaches the body's
     bool attached;
 
-    // The storm clock: real seconds since the game started (Time.unscaledTime — physics warp does
+    // The storm clock: real seconds since the game started (Time.unscaledTime, so physics warp does
     // not hurry a storm, on-rails warp never did) less the time the game spent paused while an
     // aurora was alive to see it, so a storm never jumps on unpause.
     static float clockPaused;
@@ -114,7 +114,7 @@ public class AuroraStormScheduler : MonoBehaviour
     /// <summary>Attach this scheduler to the body's session-long sequence (the seed is the save's
     /// seed ^ the body's name); a sequence seen for the first time this session starts with the
     /// wait an observer arriving at a random moment would see (the stationary residual: on average
-    /// 0.68 × the mean, sometimes minutes, never more than one full interval).</summary>
+    /// 0.68 x the mean, sometimes minutes, never more than one full interval).</summary>
     public void Seed(int seed)
     {
         if (!sequences.TryGetValue(seed, out seq))
@@ -165,7 +165,7 @@ public class AuroraStormScheduler : MonoBehaviour
 
     void Update()
     {
-        // Planet center → shader, so its ray-sphere math survives KSP's
+        // Planet center -> shader, so its ray-sphere math survives KSP's
         // floating origin. In the Unity test scene the Aurora object has no
         // parent and the planet sits at the origin, so this is skipped.
         if (auroraMaterial != null && transform.parent != null)
@@ -292,7 +292,7 @@ public class AuroraStormScheduler : MonoBehaviour
     }
 
     /// <summary>The storm clock (see ClockTick): real time less pauses. The cadence is a player's
-    /// experience — 45 minutes between storms means 45 minutes at the keyboard.</summary>
+    /// experience: 45 minutes between storms means 45 minutes at the keyboard.</summary>
     static float TimeNow()
     {
         return Application.isPlaying
@@ -308,7 +308,7 @@ public class AuroraStormScheduler : MonoBehaviour
 
     /// <summary>The wait between storms: exponential (memoryless, as real storm arrivals are) but with a
     /// floor of 40 % of the mean, so a 45-minute average never produces two storms five minutes apart.
-    /// The mean is preserved: mean × (0.4 + 0.6 × exponential with mean 1).</summary>
+    /// The mean is preserved: mean x (0.4 + 0.6 x exponential with mean 1).</summary>
     float SampleQuietInterval(float mean)
     {
         float u = Mathf.Max(0.001f, (float)seq.rng.NextDouble());
@@ -317,8 +317,8 @@ public class AuroraStormScheduler : MonoBehaviour
 
     /// <summary>The wait seen by an observer who arrives at a random moment of a sequence that has
     /// been running forever (the stationary residual of SampleQuietInterval): with probability 0.4
-    /// somewhere inside the floor, uniform on [0, 0.4 × mean], otherwise the floor plus the
-    /// exponential tail. Mean 0.68 × the mean wait.</summary>
+    /// somewhere inside the floor, uniform on [0, 0.4 x mean], otherwise the floor plus the
+    /// exponential tail. Mean 0.68 x the mean wait.</summary>
     float SampleFirstWait(float mean)
     {
         if (seq.rng.NextDouble() < 0.4) return mean * 0.4f * (float)seq.rng.NextDouble();

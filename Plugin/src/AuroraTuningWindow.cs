@@ -1,4 +1,4 @@
-// Realistic Volumetric Aurorae (RVA) — Copyright (c) 2026 HereComesTheBoom ("Realistic Volumetric Aurorae")
+// Realistic Volumetric Aurorae (RVA). Copyright (c) 2026 HereComesTheBoom ("Realistic Volumetric Aurorae")
 // SPDX-License-Identifier: CC-BY-NC-SA-4.0  (see LICENSE.txt)
 using System;
 using System.Collections.Generic;
@@ -9,17 +9,17 @@ namespace RVA
 {
     /// <summary>
     /// In-flight tuning window (dev build: every setting and debug control;
-    /// release build: the player-facing ones — see DevOnlyAttribute): a live slider with its own
+    /// release build: the player-facing ones, see DevOnlyAttribute): a live slider with its own
     /// "def" button (resets that one value to the body's preset), RGB
     /// sliders for the three colours, storm override, the render A/B switch,
     /// composite-order and debug views, Save / Copy buttons.
-    /// 1.1.0: a body selector at the top — each configured body has its own values
+    /// 1.1.0: a body selector at the top: each configured body has its own values
     /// (the local aurora's, or another body's scaled-space instance); the global
-    /// settings (hotkey, render scale, map view …) are shared.
+    /// settings (hotkey, render scale, map view ...) are shared.
     /// Toggle with KSP's modifier key (Alt) + toggleKey (F8 by default).
     ///
     /// Adding a slider: call Slider/IntSlider/Toggle/ColorRows with the
-    /// field's nameof(...) — the def button and the default lookup come for free.
+    /// field's nameof(...), and the def button and the default lookup come for free.
     /// </summary>
     public class AuroraTuningWindow : MonoBehaviour
     {
@@ -104,7 +104,7 @@ namespace RVA
             PickEditBody();
             Defaults = AuroraConfigs.Preset(editBody);
             GUI.skin = HighLogic.Skin;
-            windowRect = GUILayout.Window(WindowId, windowRect, Draw, $"Realistic Volumetric Aurorae v{RVABootstrap.Version} — live tuning{(Dev ? " (dev build)" : "")}", GUILayout.Width(620));
+            windowRect = GUILayout.Window(WindowId, windowRect, Draw, $"Realistic Volumetric Aurorae v{RVABootstrap.Version}, live tuning{(Dev ? " (dev build)" : "")}", GUILayout.Width(620));
 
             // Stop the flight camera from spinning while sliders are dragged
             var mouse = new Vector2(Input.mousePosition.x, Screen.height - Input.mousePosition.y);
@@ -141,12 +141,12 @@ namespace RVA
             GUILayout.FlexibleSpace();
             GUILayout.EndHorizontal();
             if (!EditingLocal)
-                GUILayout.Label(inst != null ? $"   {editBody}: scaled-space instance — {inst.Status}"
+                GUILayout.Label(inst != null ? $"   {editBody}: scaled-space instance: {inst.Status}"
                                              : $"   {editBody}: not in this scene (edits apply when it is)", Wrap);
 
             // ---- status (wrapped: these lines can be long) -------------------------
             string build = RVABootstrap.ShaderBuildMatches ? $"shader build {RVABootstrap.ShaderBuild}"
-                         : $"SHADER BUILD {RVABootstrap.ShaderBuildFound} ≠ PLUGIN {RVABootstrap.ShaderBuild} — rebuild the bundle and the DLL from the same source";
+                         : $"SHADER BUILD {RVABootstrap.ShaderBuildFound} DOES NOT MATCH PLUGIN {RVABootstrap.ShaderBuild}: rebuild the bundle and the DLL from the same source";
             if (Dev) GUILayout.Label($"FPS {fps:F0}   |   {build}   |   {(rend != null ? rend.Status : "renderer n/a")}", Wrap);
             else     GUILayout.Label($"FPS {fps:F0}   |   {build}", Wrap);
             string stormInfo = st != null
@@ -158,7 +158,7 @@ namespace RVA
             // layout says, and the CPU readout used to be drawn over it.
             if (rend != null)
             {
-                bool ar = GUILayout.Toggle(rend.renderingEnabled, " Aurora render (A/B — not saved)", GUILayout.Width(ToggleW));
+                bool ar = GUILayout.Toggle(rend.renderingEnabled, " Aurora render (A/B test, not saved)", GUILayout.Width(ToggleW));
                 if (ar != rend.renderingEnabled) rend.renderingEnabled = ar;
             }
             if (Dev)
@@ -189,17 +189,17 @@ namespace RVA
 
             Header("Structure");
             changed |= Slider("Upper band compression",    ref s.compressFactor, 0.2f,  1f,   "F2", nameof(s.compressFactor));
-            changed |= Slider("Ray threshold (→ sparser)", ref s.rayThreshold,   0f,    0.6f, "F2", nameof(s.rayThreshold));
-            changed |= Slider("Ray contrast (→ crisper)",  ref s.rayGain,        0.5f,  5f,   "F2", nameof(s.rayGain));
+            changed |= Slider("Ray threshold (higher = sparser)", ref s.rayThreshold,   0f,    0.6f, "F2", nameof(s.rayThreshold));
+            changed |= Slider("Ray contrast (higher = crisper)",  ref s.rayGain,        0.5f,  5f,   "F2", nameof(s.rayGain));
             changed |= Slider("Ray taper (columns widest at the base, tips at the top)", ref s.rayTaper, 0f, 1f, "F2", nameof(s.rayTaper));
             changed |= Slider("Ray zone (+1 rays above a smooth glow | 0 rays to the bottom edge | -1 rays under a diffuse top)", ref s.rayZone, -1f, 1f, "F2", nameof(s.rayZone));
-            changed |= Slider("Ray fineness (→ thinner)",  ref s.rayScale,       0.5f,  6f,   "F2", nameof(s.rayScale));
+            changed |= Slider("Ray fineness (higher = thinner)",  ref s.rayScale,       0.5f,  6f,   "F2", nameof(s.rayScale));
             changed |= Slider("Ribbon edge sharpness",     ref s.edgeSharpness,  0f,    1f,   "F2", nameof(s.edgeSharpness));
             changed |= Slider("Top spread (diffuse cap)",  ref s.topSpread,      0f,    3f,   "F2", nameof(s.topSpread));
             changed |= Slider("Bottom edge softness",      ref s.bottomSoftness, 0.02f, 0.3f, "F3", nameof(s.bottomSoftness));
             changed |= Slider("Close-range detail",        ref s.detailStrength, 0f,    1f,   "F2", nameof(s.detailStrength));
             changed |= Slider("Hide in daylight",          ref s.daylightFade,   0f,    1f,   "F2", nameof(s.daylightFade));
-            changed |= Toggle("   … except in an eclipse: while the body's parent hides the sun (Laythe in Jool's shadow, an hour per orbit) the aurora shows over the whole body — all bodies", ref s.eclipses, nameof(s.eclipses));
+            changed |= Toggle("   ... except in an eclipse: while the body's parent hides the sun (Laythe in Jool's shadow, about an hour per orbit) the aurora shows over the whole body. Applies to all bodies", ref s.eclipses, nameof(s.eclipses));
             changed |= Slider("Noise scale",               ref s.noiseScale,     0.5f,  5f,   "F2", nameof(s.noiseScale));
 
             Header("Geometry");
@@ -207,15 +207,15 @@ namespace RVA
             changed |= Slider($"Height ({s.altTopFraction * rkm:F0} km: band thickness)", ref s.altTopFraction, 0.02f, 0.30f, "F3", nameof(s.altTopFraction));
             changed |= Slider("Storm height gain",                                ref s.stormHeightGain, 1f,     1.6f,  "F2", nameof(s.stormHeightGain));
             changed |= Slider($"Latitude center ({s.latCenter * 90f:F0}°)",       ref s.latCenter,       0.40f,  0.90f, "F3", nameof(s.latCenter));
-            changed |= Slider($"Ribbon half-width (±{s.latWidth * 90f:F1}°)",     ref s.latWidth,        0.005f, 0.20f, "F3", nameof(s.latWidth));
-            changed |= Slider($"Ribbon folds (±{s.foldStrength * 45f:F1}°)",      ref s.foldStrength,    0f,     0.30f, "F3", nameof(s.foldStrength));
-            changed |= Slider("Fold scale (→ tighter curls)",                     ref s.foldScale,       0.2f,   4f,    "F2", nameof(s.foldScale));
+            changed |= Slider($"Ribbon half-width (+/-{s.latWidth * 90f:F1}°)",     ref s.latWidth,        0.005f, 0.20f, "F3", nameof(s.latWidth));
+            changed |= Slider($"Ribbon folds (+/-{s.foldStrength * 45f:F1}°)",      ref s.foldStrength,    0f,     0.30f, "F3", nameof(s.foldStrength));
+            changed |= Slider("Fold scale (higher = tighter curls)",                     ref s.foldScale,       0.2f,   4f,    "F2", nameof(s.foldScale));
             changed |= Slider("Arc spacing (the three arcs; 0 = on one line)",    ref s.bandSpacing,     0f,     2f,    "F2", nameof(s.bandSpacing));
-            changed |= Slider("Arc independence (0 parallel → 1 free)",           ref s.bandIndependence, 0f,    1f,    "F2", nameof(s.bandIndependence));
-            changed |= Slider("Width variance (1 = 0.15–2× the width; above 1 the thick stretches grow to 1+V×, the thin ones sit at the 0.15 floor)", ref s.widthVariance, 0f, 3f, "F2", nameof(s.widthVariance));
+            changed |= Slider("Arc independence (0 = parallel, 1 = free)",           ref s.bandIndependence, 0f,    1f,    "F2", nameof(s.bandIndependence));
+            changed |= Slider("Width variance (1 = 0.15 to 2x the width; above 1 the thick stretches grow to 1+V times, the thin ones sit at the 0.15 floor)", ref s.widthVariance, 0f, 3f, "F2", nameof(s.widthVariance));
             changed |= Slider("Height variance",                                  ref s.heightVariance,  0f,     1f,    "F2", nameof(s.heightVariance));
             changed |= Slider("Spike height",                                     ref s.spikiness,       0f,     2f,    "F2", nameof(s.spikiness));
-            changed |= Slider("Spike sparsity (→ fewer)",                         ref s.spikeThreshold,  0.3f,   0.9f,  "F2", nameof(s.spikeThreshold));
+            changed |= Slider("Spike sparsity (higher = fewer)",                         ref s.spikeThreshold,  0.3f,   0.9f,  "F2", nameof(s.spikeThreshold));
             changed |= Slider("Green rays into upper bands",                      ref s.greenSpikes,     0f,     1f,    "F2", nameof(s.greenSpikes));
 
             Header("Storm");
@@ -250,23 +250,23 @@ namespace RVA
                 if (nm != mins) { s.averageQuietDuration = Mathf.Round(nm * 60f); changed = true; }
             }
             if (Dev) GUILayout.Label("   The oval through a storm (preview with the manual intensity above):", Wrap);
-            changed |= Slider("Quiet arc spacing (× configured; 0.35 = arcs nearly on one line)", ref s.ovalQuietSpread, 0f, 1f, "F2", nameof(s.ovalQuietSpread));
+            changed |= Slider("Quiet arc spacing (times the configured spacing; 0.35 = arcs nearly on one line)", ref s.ovalQuietSpread, 0f, 1f, "F2", nameof(s.ovalQuietSpread));
             changed |= Toggle("Storms reach the equator: at peak the arcs run from the quiet oval's poleward arc down to the latitude below (replaces the two sliders after it)", ref s.stormToEquator, nameof(s.stormToEquator));
             if (s.stormToEquator)
             {
-                changed |= Slider($"   … down to {s.stormReach * 90f:F1}° at peak",            ref s.stormReach,    0f,    0.6f,  "F3", nameof(s.stormReach));
-                changed |= Slider("   fold amplitude × this at peak (spread arcs fill the gaps)", ref s.stormFoldGain, 1f,    4f,    "F2", nameof(s.stormFoldGain));
+                changed |= Slider($"   ... down to {s.stormReach * 90f:F1}° at peak",            ref s.stormReach,    0f,    0.6f,  "F3", nameof(s.stormReach));
+                changed |= Slider("   fold amplitude times this at peak (the spread arcs fill the gaps)", ref s.stormFoldGain, 1f,    4f,    "F2", nameof(s.stormFoldGain));
             }
             else
             {
-                changed |= Slider("Peak-storm arc spacing (× configured; spreads to lower + higher latitudes)", ref s.ovalStormSpread, 1f, 3f, "F2", nameof(s.ovalStormSpread));
+                changed |= Slider("Peak-storm arc spacing (times the configured spacing; spreads to lower and higher latitudes)", ref s.ovalStormSpread, 1f, 3f, "F2", nameof(s.ovalStormSpread));
                 changed |= Slider($"Equatorward shift at peak ({s.ovalEquatorward * 90f:F1}°)", ref s.ovalEquatorward, 0f, 0.15f, "F3", nameof(s.ovalEquatorward));
             }
-            changed |= Slider("Sheets widen at peak (half-width × (1 + this))", ref s.ovalStormWiden, 0f, 2f, "F2", nameof(s.ovalStormWiden));
+            changed |= Slider("Sheets widen at peak (half-width times 1 + this)", ref s.ovalStormWiden, 0f, 2f, "F2", nameof(s.ovalStormWiden));
             changed |= Slider("Second arc fully in at (storm intensity; it fades in over the 0.15 below; 0 = always on)", ref s.arc2Appears, 0f, 1f, "F2", nameof(s.arc2Appears));
             changed |= Slider("Third arc fully in at (storm intensity; 0 = always on)",  ref s.arc3Appears, 0f, 1f, "F2", nameof(s.arc3Appears));
 
-            Header("Light on the vessel (the aurora's glow on your craft — not on terrain, water or clouds)");
+            Header("Light on the vessel (the aurora's glow on your craft, not on terrain, water or clouds)");
             changed |= Toggle("Light the vessel from the aurora", ref s.vesselLight, nameof(s.vesselLight));
             if (s.vesselLight)
             {
@@ -276,14 +276,14 @@ namespace RVA
                     GUILayout.BeginHorizontal();
                     SplitLabel("   lights (each is a pass per part when per-pixel)", LabelW, out string ln, out string lh);
                     NameLabel(ln);
-                    changed |= Choice(ref s.vesselLightCount, 1, "1 — mean direction");
-                    changed |= Choice(ref s.vesselLightCount, 2, "2 — east / west");
-                    changed |= Choice(ref s.vesselLightCount, 4, "4 — quarters");
+                    changed |= Choice(ref s.vesselLightCount, 1, "1: mean direction");
+                    changed |= Choice(ref s.vesselLightCount, 2, "2: east / west");
+                    changed |= Choice(ref s.vesselLightCount, 4, "4: quarters");
                     if (GUILayout.Button("def", GUILayout.Width(DefW))) { int d = DefI(nameof(s.vesselLightCount)); if (d != s.vesselLightCount) { s.vesselLightCount = d; changed = true; } }
                     GUILayout.EndHorizontal();
                     HelpLine(lh);
                 }
-                changed |= Toggle("   per-pixel (a pass per part and light; off = per-vertex: free, but Unity hands out only four vertex-light slots per object and a light that loses its slot is drawn as ambient — the hull pulses if the craft's own lights compete)", ref s.vesselLightPixel, nameof(s.vesselLightPixel));
+                changed |= Toggle("   per-pixel (a pass per part and light; off = per-vertex: free, but Unity hands out only four vertex-light slots per object and a light that loses its slot is drawn as ambient, so the hull pulses if the craft's own lights compete)", ref s.vesselLightPixel, nameof(s.vesselLightPixel));
                 if (Dev)
                 {
                     changed |= IntSlider("   trace steps (longitude steps traced along each arc on each side of the vessel)", ref s.vesselLightSamples, 16, 128, nameof(s.vesselLightSamples));
@@ -294,33 +294,33 @@ namespace RVA
                     GUILayout.Label($"   {owner.VesselLight.Status}", Wrap);
                     GUILayout.BeginHorizontal();
                     GUILayout.Label("   ", GUILayout.Width(20));
-                    if (GUILayout.Button(owner.VesselLight.Logging ? "Logging the light to KSP.log…" : "Log the light to KSP.log for 10 s (every frame: inputs, each light's intensity and direction)", Wrap))
+                    if (GUILayout.Button(owner.VesselLight.Logging ? "Logging the light to KSP.log..." : "Log the light to KSP.log for 10 s (every frame: inputs, each light's intensity and direction)", Wrap))
                     {
                         owner.VesselLight.LogFrames(10f);
-                        Flash("Logging the vessel light every frame for 10 s — look for [RVA:VesselLight] in KSP.log");
+                        Flash("Logging the vessel light every frame for 10 s. Look for [RVA:VesselLight] in KSP.log");
                     }
                     GUILayout.EndHorizontal();
                 }
             }
 
-            Header($"Performance / sampling — {editBody}'s own (each body has its own buffers and steps)");
+            Header($"Performance / sampling for {editBody} (each body has its own buffers and steps)");
             changed |= Slider("Render scale",                        ref s.renderScale,       0.1f,   1f,    "F2", nameof(s.renderScale));
             changed |= Slider($"Step length ({s.stepLength * rkm:F1} km far away)", ref s.stepLength,  0.001f, 0.03f, "F4", nameof(s.stepLength));
             changed |= Slider($"Near step ({s.stepLength * s.nearStepScale * rkm:F2} km, up close)", ref s.nearStepScale, 0.05f, 1f, "F3", nameof(s.nearStepScale));
             changed |= Slider($"Step growth ({s.stepGrowth * 100f:F1} % of the distance from the camera)", ref s.stepGrowth, 0f, 0.1f, "F3", nameof(s.stepGrowth));
-            changed |= Slider($"Far step (× step; {s.stepLength * s.stepFarMul * rkm:F1} km)", ref s.stepFarMul, 1f, 8f, "F1", nameof(s.stepFarMul));
+            changed |= Slider($"Far step (times the step; {s.stepLength * s.stepFarMul * rkm:F1} km)", ref s.stepFarMul, 1f, 8f, "F1", nameof(s.stepFarMul));
             changed |= Slider("Max steps per ray (safety cap)",      ref s.maxSteps,          8f,     512f,  "F0", nameof(s.maxSteps));
             changed |= Slider("Sample jitter (hides layering)",      ref s.jitter,            0f,     1f,    "F2", nameof(s.jitter));
-            changed |= Slider("Noise filter width (× step; lower keeps finer rays at coarser steps — with accumulation on, it averages the aliasing)", ref s.stepFilter, 0.2f, 1.5f, "F2", nameof(s.stepFilter));
+            changed |= Slider("Noise filter width (fraction of the step; lower keeps finer rays at coarser steps, since with accumulation on the aliasing averages out)", ref s.stepFilter, 0.2f, 1.5f, "F2", nameof(s.stepFilter));
             changed |= Slider("Upsample smoothing (hides grain)",    ref s.upsampleSmoothing, 0f,     1f,    "F2", nameof(s.upsampleSmoothing));
             changed |= Toggle("Depth-aware upsample (vessel / terrain / horizon silhouettes at screen resolution; needs the depth occlusion below)", ref s.edgeAwareUpsample, nameof(s.edgeAwareUpsample));
             // 1.1.0 performance
-            changed |= Toggle("Temporal accumulation: each frame samples a different sub-pixel and different depths, and the frames are averaged in a history buffer (reprojected as the camera moves) at up to 2× the render resolution", ref s.temporalAccumulation, nameof(s.temporalAccumulation));
+            changed |= Toggle("Temporal accumulation: each frame samples a different sub-pixel and different depths, and the frames are averaged in a history buffer (reprojected as the camera moves) at up to 2x the render resolution", ref s.temporalAccumulation, nameof(s.temporalAccumulation));
             if (s.temporalAccumulation)
             {
                 changed |= Slider("   history weight (higher = smoother, slower to follow change)", ref s.temporalWeight, 0.5f, 0.98f, "F2", nameof(s.temporalWeight));
-                changed |= Slider("   history resolution (× render scale, capped at the screen)", ref s.temporalUpscale, 1f, 2f, "F2", nameof(s.temporalUpscale));
-                changed |= Slider("   history clamp (σ of the current neighbourhood; lower = less ghosting, more flicker)", ref s.temporalClamp, 0.5f, 4f, "F1", nameof(s.temporalClamp));
+                changed |= Slider("   history resolution (times the render scale, capped at the screen)", ref s.temporalUpscale, 1f, 2f, "F2", nameof(s.temporalUpscale));
+                changed |= Slider("   history clamp (standard deviations of the current neighbourhood; lower = less ghosting, more flicker)", ref s.temporalClamp, 0.5f, 4f, "F1", nameof(s.temporalClamp));
             }
             if (Dev && rend != null && !string.IsNullOrEmpty(rend.PerfStatus)) GUILayout.Label($"   {rend.PerfStatus}", Wrap);
             changed |= IntSlider("Meander LUT resolution",           ref s.meanderResolution, 32,     1024,        nameof(s.meanderResolution));
@@ -342,7 +342,7 @@ namespace RVA
                 GUILayout.EndHorizontal();
             }
             changed |= Toggle("   flip EVE's buffer vertically (only if the occlusion is upside-down)", ref s.cloudBufferFlipY, nameof(s.cloudBufferFlipY));
-            changed |= Slider("Cloud top altitude (km) — top of the highest volumetric layer", ref s.cloudTopKm, 2f, 120f, "F0", nameof(s.cloudTopKm));
+            changed |= Slider("Cloud top altitude (km): the top of the highest volumetric layer", ref s.cloudTopKm, 2f, 120f, "F0", nameof(s.cloudTopKm));
             changed |= Toggle("Also switch the composite event by camera altitude (below / above the cloud tops)", ref s.autoAboveClouds, nameof(s.autoAboveClouds));
             changed |= EventRow(s.autoAboveClouds ? "Composite at (below):" : "Composite at:", ref s.compositeEvent, nameof(s.compositeEvent),
                                 AuroraRenderer.EvAfterForwardOpaque, AuroraRenderer.EvBeforeForwardAlpha, AuroraRenderer.EvAfterForwardAlpha,
@@ -377,7 +377,7 @@ namespace RVA
             changed |= Toggle("Flip Y (only if the aurora is upside-down)", ref s.flipY, nameof(s.flipY));
             if (rend != null)
             {
-                bool ao = GUILayout.Toggle(rend.auroraOnly, " Aurora only (hide the scene — shows the raw aurora buffer)", GUILayout.Width(ToggleW));
+                bool ao = GUILayout.Toggle(rend.auroraOnly, " Aurora only (hides the scene and shows the raw aurora buffer)", GUILayout.Width(ToggleW));
                 if (ao != rend.auroraOnly) rend.auroraOnly = ao;
             }
             Header("Diagnostics (KSP.log, prefix [RVA:diag])");
@@ -429,7 +429,7 @@ namespace RVA
             if (Dev && GUILayout.Button($"Write Config/{editBody}.cfg"))
             {
                 // the shipped preset, for the author: every per-body key as it is right now
-                try { string path = AuroraConfigs.WritePresetFile(editBody); Flash($"Preset written: {path} — copy it into the kit's Config folder for the release"); }
+                try { string path = AuroraConfigs.WritePresetFile(editBody); Flash($"Preset written: {path}. Copy it into the kit's Config folder for the release"); }
                 catch (Exception e) { Flash("Preset write failed: " + e.Message); }
             }
             if (GUILayout.Button("Close")) visible = false;
@@ -441,8 +441,8 @@ namespace RVA
 
         // ---- widgets -------------------------------------------------------------
         // A row is  [name LabelW] [slider SliderW] [value ValueW] [def DefW] ; a toggle row  [box + name ToggleW] [def].
-        // The name is the part of a row's label that fits its column; the rest of the label — the
-        // explanation — goes on its own wrapped line under the row (HelpLine). Before 1.1.0 the whole
+        // The name is the part of a row's label that fits its column; the rest of the label, the
+        // explanation, goes on its own wrapped line under the row (HelpLine). Before 1.1.0 the whole
         // label sat in the column and ran on under the slider and the def button, which hid the end
         // of every explanation.
         const float LabelW = 220f, SliderW = 200f, ValueW = 56f, DefW = 34f;
@@ -486,24 +486,24 @@ namespace RVA
         static string Shorten(string text, float width)
         {
             string t = text.TrimEnd();
-            while (t.Length > 8 && !Fits(t + "…", width))
+            while (t.Length > 8 && !Fits(t + "...", width))
             {
                 int sp = t.LastIndexOf(' ');
                 t = sp > 3 ? t.Substring(0, sp).TrimEnd() : t.Substring(0, t.Length - 4);
             }
-            return t + "…";
+            return t + "...";
         }
 
         /// <summary>Split a row's label into the name that fits the column (width) and the explanation
-        /// for the line under the row — null when the whole label fits. The cut is the first ": " or
-        /// " — ", or the " (" that opens a bracket closing the label, whichever comes first; a label
+        /// for the line under the row, or null when the whole label fits. The cut is the first ": " or
+        /// " - ", or the " (" that opens a bracket closing the label, whichever comes first; a label
         /// with none of them is left whole (a slider's name wraps in its column; a toggle shortens it).</summary>
         static void SplitLabel(string label, float width, out string nm, out string hp)
         {
             nm = label; hp = null;
             if (Fits(label, width)) return;
             int ic = label.IndexOf(": ", StringComparison.Ordinal);
-            int id = label.IndexOf(" — ", StringComparison.Ordinal);
+            int id = label.IndexOf(" - ", StringComparison.Ordinal);
             int ip = label.EndsWith(")", StringComparison.Ordinal) ? label.IndexOf(" (", StringComparison.Ordinal) : -1;
             int cut = -1, skip = 0; bool paren = false;
             if (ic > 0)                          { cut = ic; skip = 2; }
@@ -514,7 +514,7 @@ namespace RVA
             hp = label.Substring(cut + skip);
             if (paren) hp = hp.Substring(0, hp.Length - 1);
             hp = hp.Trim();
-            if (hp.Length > 0 && hp[0] < 128 && char.IsLower(hp[0])) hp = char.ToUpperInvariant(hp[0]) + hp.Substring(1);   // (not σ → Σ)
+            if (hp.Length > 0 && hp[0] < 128 && char.IsLower(hp[0])) hp = char.ToUpperInvariant(hp[0]) + hp.Substring(1);   // (not sigma to capital sigma)
         }
 
         static void NameLabel(string nm) => GUILayout.Label(nm, Name, GUILayout.Width(LabelW));
@@ -532,7 +532,7 @@ namespace RVA
         static void Header(string t)
         {
             GUILayout.Space(8);
-            GUILayout.Label($"— {t} —", Wrap);
+            GUILayout.Label($"--- {t} ---", Wrap);
         }
 
         /// <summary>Slider row without a def button (for values that aren't settings).</summary>
@@ -591,7 +591,7 @@ namespace RVA
             {
                 // no cut, or a name still too long for the toggle (whose text neither wraps nor stops
                 // at its width): the whole label goes under the row and the toggle shows what fits
-                hp = hp == null ? nm.Trim() : nm.Trim() + " — " + hp;
+                hp = hp == null ? nm.Trim() : nm.Trim() + ": " + hp;
                 nm = Shorten(nm, textW);
             }
             GUILayout.BeginHorizontal();

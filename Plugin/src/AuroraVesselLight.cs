@@ -1,4 +1,4 @@
-// Realistic Volumetric Aurorae (RVA) — Copyright (c) 2026 HereComesTheBoom ("Realistic Volumetric Aurorae")
+// Realistic Volumetric Aurorae (RVA). Copyright (c) 2026 HereComesTheBoom ("Realistic Volumetric Aurorae")
 // SPDX-License-Identifier: CC-BY-NC-SA-4.0  (see LICENSE.txt)
 using UnityEngine;
 
@@ -8,15 +8,15 @@ namespace RVA
     /// The aurora's light on the vessel (1.1.0; an option, off by default). The point
     /// lights of v3.x lit the terrain, the water and the vessel from a ring of 90 lights
     /// along the ribbons and went in v3.23; this brings back the part the vessel saw, as
-    /// a handful of Unity lights that reach the vessel's layers only — not the terrain,
+    /// a handful of Unity lights that reach the vessel's layers only, not the terrain,
     /// not the water, not the clouds.
     ///
     /// Where the ribbons are comes from the meander lookup the shader reads: besides each
     /// arc's shift, flare and width per longitude it carries the folded ribbon's latitude
-    /// (AuroraMeanderTexture, channel A — the scan in AuroraNoise.RibbonLatitude, baked on
+    /// (AuroraMeanderTexture, channel A, the scan in AuroraNoise.RibbonLatitude, baked on
     /// its worker thread), so tracing a ribbon here is a lookup, not noise. Every piece of
     /// ribbon above the vessel's horizon contributes light in proportion to its brightness
-    /// (arc fade, flare, width, daylight fade) and inversely to its distance squared — an
+    /// (arc fade, flare, width, daylight fade) and inversely to its distance squared, an
     /// extended source summed element by element, on a longitude grid anchored at the
     /// vessel and fine where the ribbon is near (0.15° steps growing geometrically to the
     /// far side), so the sum is the integral to a few percent and moves smoothly with the
@@ -25,11 +25,11 @@ namespace RVA
     /// The sky is then split into four quarters around the vessel (north-east, north-west,
     /// south-east, south-west) and each quarter's light becomes one Unity light: its
     /// direction the quarter's weighted mean, its strength the quarter's share. The split is
-    /// soft — a piece of ribbon is shared between the quarters by its direction cosines, so
+    /// soft: a piece of ribbon is shared between the quarters by its direction cosines, so
     /// one straight overhead gives every light a quarter of it and one due east gives the two
-    /// eastern lights half each — because a hard split flipped whole stretches of ribbon from
+    /// eastern lights half each, because a hard split flipped whole stretches of ribbon from
     /// one light to another as the folds drifted across the boundaries. A ribbon straight
-    /// overhead thus lights the hull from two or four directions at ±45° or so, the way a band
+    /// overhead thus lights the hull from two or four directions at +/-45° or so, the way a band
     /// across the sky does, instead of from the zenith alone, which lit nothing but the
     /// up-facing rims; a band on the horizon puts all four in that quarter. Directly under a
     /// quiet, straight ribbon the four add up to the configured intensity. Everything is
@@ -42,8 +42,8 @@ namespace RVA
     /// planet's radius: it only has to be large next to the craft, and a light 12,000 km
     /// out with a 48,000 km range (two Jool radii) is a size Unity's light pipeline was
     /// never meant to see. PER PIXEL by default (a ForwardAdd pass per part
-    /// and light, so the count is a setting: 1, 2 or 4): per-vertex was the first choice —
-    /// no extra pass at all, and Unity's vertex lights are point lights, four per object —
+    /// and light, so the count is a setting: 1, 2 or 4): per-vertex was the first choice (
+    /// no extra pass at all, and Unity's vertex lights are point lights, four per object),
     /// but a vertex light is one of four slots Unity hands out per object by intensity,
     /// shared with every other non-pixel light on the craft, and a light that loses its slot
     /// is rendered as spherical harmonics instead; with these lights' intensities moving
@@ -77,7 +77,7 @@ namespace RVA
         // KSP layers the light reaches: 0 Default (parts), 16 kerbals, 17 EVA, 19 PhysicalObjects
         public const int VesselLayers = (1 << 0) | (1 << 16) | (1 << 17) | (1 << 19);
         // a light sits this far from the vessel (metres), with four times that as its range: Unity's
-        // point-light falloff 1 / (1 + 25 (d / r)²) is then 1 / (1 + 25/16) over the whole vessel
+        // point-light falloff 1 / (1 + 25 (d / r)^2) is then 1 / (1 + 25/16) over the whole vessel
         const float LightDistance     = 50000f;
         const float AttenCompensation = 1f + 25f / 16f;
         const int   Quadrants          = 4;
@@ -109,8 +109,8 @@ namespace RVA
         /// <summary>1, 2 or 4.</summary>
         int Count => lightCount >= 4 ? 4 : lightCount >= 2 ? 2 : 1;
 
-        /// <summary>Diagnostics: write one line per frame to KSP.log for this many seconds — every input of the
-        /// trace, the unsmoothed and smoothed intensity and direction of each light — so a pulse on the hull can
+        /// <summary>Diagnostics: write one line per frame to KSP.log for this many seconds: every input of the
+        /// trace, the unsmoothed and smoothed intensity and direction of each light, so a pulse on the hull can
         /// be matched against the numbers that drove it.</summary>
         public void LogFrames(float seconds)
         {
@@ -174,7 +174,7 @@ namespace RVA
         }
 
         /// <summary>The longitude offsets of the trace grid on one side of the vessel: FirstStepDeg
-        /// growing geometrically so that the n-th step lands on the far side (π).</summary>
+        /// growing geometrically so that the n-th step lands on the far side (pi).</summary>
         void EnsureGrid()
         {
             int n = Mathf.Clamp(samples, 16, 128);
@@ -182,7 +182,7 @@ namespace RVA
             stepLon = new float[n];
             stepCount = n;
             float first = FirstStepDeg * Mathf.Deg2Rad;
-            // growth g with first × (g^n − 1) / (g − 1) = π, by bisection
+            // growth g with first x (g^n - 1) / (g - 1) = pi, by bisection
             float lo = 1.0001f, hi = 2f;
             for (int it = 0; it < 40; it++)
             {
@@ -222,7 +222,7 @@ namespace RVA
             float   hL      = altBase + 0.35f * Mathf.Max(altTop - altBase, 0f);   // the green base, where most of the light is
             float   rL      = R + hL;
             // the ribbon is not a line: a vessel inside or beside the curtain is lit from all of its
-            // thickness, not from one point at distance zero — soften the inverse square by the
+            // thickness, not from one point at distance zero, so soften the inverse square by the
             // band's half-thickness or the ribbon's half-width, whichever is larger
             float   latW    = auroraMaterial.GetFloat("_LatWidth");
             float   soft    = Mathf.Max(0.5f * Mathf.Max(altTop - altBase, 0f), latW * 1.5707963f * R);
@@ -295,7 +295,7 @@ namespace RVA
                             float w  = e * night * ds / (d2 + soft2);
                             if (w <= 0f) continue;
                             // soft split between the lights by the direction cosines (see the header):
-                            // 4 = quarters (east / west × north / south), 2 = east / west halves, 1 = all in one
+                            // 4 = quarters (east / west x north / south), 2 = east / west halves, 1 = all in one
                             Vector3 du = dv * (w / d);
                             if (count == 4)
                             {
@@ -322,7 +322,7 @@ namespace RVA
             }
 
             // normalisation: an infinite straight ribbon straight overhead at height h, softened by soft, gives
-            // ∫ ds / (h² + soft² + s²) = π / √(h² + soft²), so directly under a quiet ribbon on the ground the
+            // integral of ds / (h^2 + soft^2 + s^2) = pi / sqrt(h^2 + soft^2), so directly under a quiet ribbon on the ground the
             // quadrants' targets add up to the configured intensity
             float norm = intensity * act * Mathf.Sqrt(hL * hL + soft2) / Mathf.PI;
             float dt   = Mathf.Max(Time.deltaTime, 1e-4f);
@@ -339,7 +339,7 @@ namespace RVA
                 if (wSum[q] > 0f)
                 {
                     // normalised BY HAND: the sums are of order 1e-5 on a Jool-sized body (ribbon length over
-                    // distance squared), and Vector3.normalized returns ZERO for anything under 1e-5 — which put
+                    // distance squared), and Vector3.normalized returns ZERO for anything under 1e-5, which put
                     // the light at the vessel itself, and had it jumping between there and the sky as the sum
                     // crossed that threshold: the flicker, and the "only the seams lit" state, seen at Jool and
                     // never at Kerbin or Laythe, where the sums are ten times larger

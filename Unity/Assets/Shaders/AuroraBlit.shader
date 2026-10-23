@@ -1,18 +1,18 @@
-// Realistic Volumetric Aurorae (RVA) — Copyright (c) 2026 HereComesTheBoom ("Realistic Volumetric Aurorae")
+// Realistic Volumetric Aurorae (RVA). Copyright (c) 2026 HereComesTheBoom ("Realistic Volumetric Aurorae")
 // SPDX-License-Identifier: CC-BY-NC-SA-4.0  (see LICENSE.txt)
 // =============================================================================
-// AuroraBlit.shader — composites the low-resolution aurora buffer onto the
+// AuroraBlit.shader: composites the low-resolution aurora buffer onto the
 // flight camera (full-screen blits from command buffers, see AuroraRenderer.cs)
 //
 // The aurora buffer (_MainTex) holds  rgb = the aurora the ray meets before
 // it first crosses the cloud-top shell (HDR)   a = aurora irradiance on the
 // cloud deck under that pixel (HDR, from the emission map). A second buffer
 // (_FarTex) holds the aurora beyond that shell. Pass 0 adds
-//     near + far × T
+//     near + far x T
 // where T is EVE's own per-pixel cloud transmittance (its `colorBuffer`
-// alpha), so the clouds occlude exactly the aurora behind them — looking up
+// alpha), so the clouds occlude exactly the aurora behind them (looking up
 // from the ground all of it, from orbit only the band beyond the limb seen
-// through the limb clouds — at every altitude, with no composite-order
+// through the limb clouds) at every altitude, with no composite-order
 // switch (v3.12). With occlusion off (or no EVE buffer) T = 1 and the
 // composite event decides, as before. The upsample is depth-aware (v3.16):
 // far.a holds the scene depth each texel was cut against, and a screen pixel
@@ -26,9 +26,9 @@
 //             2  EVE's own reconstructed cloud buffer, which its command buffer
 //                publishes as the global texture `colorBuffer` (public source:
 //                DeferredRaymarchedVolumetricCloudsRenderer.cs). Verified
-//                in-game: rgb = lit cloud colour (black on the night side —
+//                in-game: rgb = lit cloud colour (black on the night side,
 //                his clouds get no ambient there), a = transmittance (1 =
-//                clear). So in this mode the light uses the OPACITY, 1 − a:
+//                clear). So in this mode the light uses the OPACITY, 1 - a:
 //                a cloud top is a white diffuse surface, and opacity carries
 //                its shape and thickness. _CloudBufferFormat selects how the
 //                alpha is read in case a version stores it the other way.
@@ -44,14 +44,14 @@
 //           without touching the cloud shader.
 //   Pass 3  debug: left half = the cloud amount pass 2 is lighting (white =
 //           cloud, after the haze floor); right half = the aurora's irradiance
-//           on the cloud-top shell, in the light's colour — where the cloud
+//           on the cloud-top shell, in the light's colour, where the cloud
 //           light would land and how strong, clouds or not (v3.11)
 //   Pass 4  TEMPORAL RESOLVE (1.1.0). Drawn by AuroraRenderer right after the
 //           march, as one triangle into the two history buffers (near, far),
-//           which are up to 2× the render buffers' size. For each history texel:
+//           which are up to 2x the render buffers' size. For each history texel:
 //             - the current frame's nearest sample (the march tilted every ray by
-//               this frame's sub-pixel jitter, so the samples sit at k + ½ + j in
-//               render pixels) with a Gaussian weight of its distance — the
+//               this frame's sub-pixel jitter, so the samples sit at k + 1/2 + j in
+//               render pixels) with a Gaussian weight of its distance, so the
 //               history pixels near this frame's samples take them in strongly,
 //               the others wait for a frame whose jitter lands nearer: over the
 //               jitter sequence the history converges on the image at its own,
@@ -59,18 +59,18 @@
 //             - the previous history, reprojected: the texel's ray is rebuilt
 //               from the camera basis, the aurora's mean distance along it (aux
 //               target, or the shell's mid radius where nothing was seen) gives
-//               a world point, _PrevVP (last frame's projection × view, planet-
+//               a world point, _PrevVP (last frame's projection x view, planet-
 //               relative) says where that point was on screen last frame. The
 //               aurora is fixed in planet-centred, world-oriented space, so this
 //               is exact for camera rotation and right to first order for the
 //               camera's translation;
 //             - rejection: no history outside last frame's view, or where the
 //               near-scene depth the march was cut at (far.a) differs from last
-//               frame's — a vessel part or terrain moving across the aurora;
-//             - variance clipping: the history is clamped to the mean ± γσ of the
-//               current frame's 3×3 neighbourhood, so the animation's changes
+//               frame's (a vessel part or terrain moving across the aurora);
+//             - variance clipping: the history is clamped to the mean +/- gammasigma of the
+//               current frame's 3x3 neighbourhood, so the animation's changes
 //               and anything the rejection misses cannot ghost for long;
-//             - blend: lerp(history, current, (1 − weight) × gaussian).
+//             - blend: lerp(history, current, (1 - weight) x gaussian).
 //           near.a (irradiance) and far.a (depth cut) are the current frame's,
 //           not accumulated. The composite then reads the history instead of the
 //           render buffers; with accumulation off nothing here runs.
@@ -87,8 +87,8 @@ Shader "RVA/AuroraBlit"
 {
     Properties
     {
-        _MainTex  ("Aurora RT — before the cloud shell (rgb), irradiance (a)", 2D) = "black" {}
-        _FarTex   ("Aurora RT — beyond the cloud shell (set by C#)", 2D) = "black" {}
+        _MainTex  ("Aurora RT, before the cloud shell (rgb), irradiance (a)", 2D) = "black" {}
+        _FarTex   ("Aurora RT, beyond the cloud shell (set by C#)", 2D) = "black" {}
         // 1 = the far part of the aurora is multiplied by EVE's per-pixel cloud
         // transmittance (buffer mode only): the clouds occlude what is behind
         // them and nothing else, from every altitude
@@ -121,7 +121,7 @@ Shader "RVA/AuroraBlit"
         // Mode 2: opacity below this gets no light. EVE's haze / ambience
         // layers leave a small opacity over the whole sky (~0.1 at the KSC);
         // without the threshold the light tints the clear sky, with it only
-        // real cloud is lit (0..threshold → 0, threshold..1 → 0..1)
+        // real cloud is lit (0..threshold -> 0, threshold..1 -> 0..1)
         _CloudMinOpacity ("Min cloud opacity lit", Range(0, 0.9)) = 0.15
     }
 
@@ -161,17 +161,17 @@ Shader "RVA/AuroraBlit"
         // Global written by EVE's cloud renderer: its reconstructed cloud buffer (mode 2)
         sampler2D colorBuffer;
 
-        // ---- temporal resolve (pass 4, 1.1.0) — all set by AuroraRenderer each frame
+        // ---- temporal resolve (pass 4, 1.1.0), all set by AuroraRenderer each frame
         sampler2D _CurNear, _CurFar, _CurAux;      // this frame's render buffers (aux.r = mean aurora distance, world units)
         sampler2D _HistNear, _HistFar;             // last frame's history buffers
         float4    _CurTexelSize;                   // (1/w, 1/h, w, h) of the render buffers
         float4    _HistTexelSize;                  // (1/w, 1/h, w, h) of the history buffers (this pass's target)
         float4    _TemporalJitter;                 // xy = this frame's sample offset, render pixels, in the buffer's memory axes
-        float4    _TemporalParams;                 // x = history weight, y = clip γ, z = 1 / (2σ²) of the reconstruction kernel, w = 1 when the history is valid
+        float4    _TemporalParams;                 // x = history weight, y = clip gamma, z = 1 / (2sigma^2) of the reconstruction kernel, w = 1 when the history is valid
         float4    _CamPosRel;                      // camera position relative to the planet centre (this renderer's units)
         float4    _ShellParams;                    // x = radius of the shell's middle (R + (base + top) / 2), y = a "far" distance for rays that miss it
-        float4x4  _PrevVP;                         // last frame's projection × view (Camera.projectionMatrix convention) × translate(planet centre)
-        // (the camera basis comes from UNITY_MATRIX_V, the field of view from unity_CameraProjection — both Unity's)
+        float4x4  _PrevVP;                         // last frame's projection x view (Camera.projectionMatrix convention) x translate(planet centre)
+        // (the camera basis comes from UNITY_MATRIX_V, the field of view from unity_CameraProjection, both Unity's)
 
         struct v2f { float2 dummy : TEXCOORD0; };
 
@@ -192,7 +192,7 @@ Shader "RVA/AuroraBlit"
         }
 
         // Aurora buffer at this pixel, smoothed: rgb = aurora before the cloud
-        // shell, a = irradiance (both HDR × exposure)
+        // shell, a = irradiance (both HDR x exposure)
         float4 bufferSample(float2 uv)
         {
             float4 c = tex2D(_MainTex, uv);
@@ -213,13 +213,13 @@ Shader "RVA/AuroraBlit"
         // march cut against (vessel, nearby terrain, the horizon) used to come
         // back as blurred, stair-stepped texels. Each buffer texel carries the
         // scene depth its march used (far.a, km); the screen pixel reads its own
-        // depth and weights the 3×3 texels around it by a tent (radius 1 = plain
-        // bilinear, wider with _Smoothing) × depth agreement, so texels on the
+        // depth and weights the 3x3 texels around it by a tent (radius 1 = plain
+        // bilinear, wider with _Smoothing) x depth agreement, so texels on the
         // other side of a silhouette drop out. A pixel nearer than everything
         // the buffer saw is an occluder thinner than a texel (a strut, a chute
         // line) and gets no aurora at all; a pixel with no agreeing texel at
         // all falls back to the plain tent. Texels with depth 0 (depth
-        // occlusion off, nothing marched, or — since v3.24 — scene depth beyond
+        // occlusion off, nothing marched, or, since v3.24, scene depth beyond
         // the near range the march clips against) are "sky": they agree with
         // every sky pixel, and a near pixel never takes them nor a sky pixel a
         // near texel. The near range is _NearDepthKm (5 % of the planet radius),
@@ -295,7 +295,7 @@ Shader "RVA/AuroraBlit"
             return float4(max(c, 0.0), opacity);
         }
 
-        // The cloud layer EVE drew this frame (premultiplied colour, ≥ 0).
+        // The cloud layer EVE drew this frame (premultiplied colour, >= 0).
         // One return per function: fxc tracks an early return inside a branch
         // as a "potentially uninitialized" result and warns.
         float3 cloudDelta(float2 uv)
@@ -399,8 +399,8 @@ Shader "RVA/AuroraBlit"
             float4 bN   = tex2Dlod(_CurNear, float4(buv, 0, 0));
             float4 bF   = tex2Dlod(_CurFar,  float4(buv, 0, 0));
 
-            // Reproject. Memory uv → the camera's NDC (y up): with the projection flipped
-            // (rendering into a texture, _ProjectionParams.x = −1) memory rows run up the
+            // Reproject. Memory uv -> the camera's NDC (y up): with the projection flipped
+            // (rendering into a texture, _ProjectionParams.x = -1) memory rows run up the
             // image, otherwise down it. The same rule turns last frame's NDC back into a
             // memory uv of the history buffer, which was rasterised the same way.
             float2 ndc = huv * 2.0 - 1.0;
@@ -450,7 +450,7 @@ Shader "RVA/AuroraBlit"
                 return o;
             }
 
-            // variance clipping against the current frame's 3×3 neighbourhood around the nearest sample
+            // variance clipping against the current frame's 3x3 neighbourhood around the nearest sample
             float3 mN = 0, qN = 0, mF = 0, qF = 0;
             [unroll]
             for (int y = -1; y <= 1; y++)
@@ -477,7 +477,7 @@ Shader "RVA/AuroraBlit"
         }
         ENDCG
 
-        // 0: additive composite — the aurora
+        // 0: additive composite, the aurora
         Pass
         {
             Blend One One
@@ -492,7 +492,7 @@ Shader "RVA/AuroraBlit"
             ENDCG
         }
 
-        // 1: debug — aurora buffer only (aurora + irradiance as a flat tint, scene hidden)
+        // 1: debug, aurora buffer only (aurora + irradiance as a flat tint, scene hidden)
         Pass
         {
             Blend One Zero
@@ -532,7 +532,7 @@ Shader "RVA/AuroraBlit"
         //    (white = cloud; in buffer mode after the haze floor, so clear sky
         //    should be black). Right half: the irradiance the aurora puts on
         //    the cloud-top shell under each pixel, in the light's colour and at
-        //    the light's strength — the glow you would get on a solid cloud.
+        //    the light's strength, the glow you would get on a solid cloud.
         Pass
         {
             Blend One Zero
@@ -554,7 +554,7 @@ Shader "RVA/AuroraBlit"
             ENDCG
         }
 
-        // 4: temporal resolve (1.1.0) — one triangle into the two history buffers
+        // 4: temporal resolve (1.1.0): one triangle into the two history buffers
         Pass
         {
             Blend Off

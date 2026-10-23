@@ -1,4 +1,4 @@
-// Realistic Volumetric Aurorae (RVA) — Copyright (c) 2026 HereComesTheBoom ("Realistic Volumetric Aurorae")
+// Realistic Volumetric Aurorae (RVA). Copyright (c) 2026 HereComesTheBoom ("Realistic Volumetric Aurorae")
 // SPDX-License-Identifier: CC-BY-NC-SA-4.0  (see LICENSE.txt)
 using System;
 using System.Diagnostics;
@@ -8,14 +8,14 @@ using Debug = UnityEngine.Debug;
 
 /// <summary>
 /// Bakes the aurora's meander shift, flare factor and width noise into a small
-/// lookup texture (longitude × [band, hemisphere]) and feeds it to the aurora
+/// lookup texture (longitude x [band, hemisphere]) and feeds it to the aurora
 /// material as _MeanderTex.
 ///
-/// Layout: width = resolution (longitude, -π..π wrapping), height = 6 rows:
+/// Layout: width = resolution (longitude, -pi..pi wrapping), height = 6 rows:
 ///   row = band * 2 + hemisphere   (band 0..2, hemisphere 0 = north, 1 = south)
-///   R = meander shift + 0.5       (shift is ±0.225 in latNorm units)
+///   R = meander shift + 0.5       (shift is +/-0.225 in latNorm units)
 ///   G = flare 0..1                (shader: flare = lerp(0.7, 1.6, G))
-///   B = width noise 0..1          (shader: width × lerp(1-var, 1+var, B))
+///   B = width noise 0..1          (shader: width x lerp(1-var, 1+var, B))
 ///   A = where the folded ribbon is in this longitude column (latNorm toward the
 ///       set's pole; 1.1.0): the presence-weighted mean latitude over the fold's
 ///       reach (AuroraNoise.RibbonPresence), with the amount of ribbon the column
@@ -26,7 +26,7 @@ using Debug = UnityEngine.Debug;
 ///
 /// Refresh: in play mode a worker thread bakes the WHOLE texture (all 6 rows
 /// at one animation time) continuously, and the newest bake is uploaded every
-/// frame — so the meander moves as smoothly as everything else in the shader.
+/// frame, so the meander moves as smoothly as everything else in the shader.
 /// A 256-texel bake is ~2-4 ms of CPU (about twice that with the ribbon latitudes of
 /// 1.1.0), which the worker hides entirely.
 /// Without the thread (editor, or threaded = false) rowsPerFrame rows are
@@ -35,7 +35,7 @@ using Debug = UnityEngine.Debug;
 /// Attach to the same object as the aurora material user (the KSP plugin
 /// does this automatically; in the Unity test scene add it to the Aurora
 /// object and assign the material). Without it the shader's default gray
-/// texture gives zero meander and a neutral flare — still renders, just
+/// texture gives zero meander and a neutral flare: it still renders, just
 /// straighter bands.
 /// </summary>
 [ExecuteAlways]
@@ -43,7 +43,7 @@ public class AuroraMeanderTexture : MonoBehaviour
 {
     public Material auroraMaterial;
 
-    [Tooltip("Longitude samples around the planet. 256 ≈ 1.4° per texel.")]
+    [Tooltip("Longitude samples around the planet. 256 ~ 1.4° per texel.")]
     [Range(32, 1024)] public int resolution = 256;
 
     [Tooltip("Play mode: bake the whole LUT on a worker thread and upload the newest bake every frame.")]
@@ -67,7 +67,7 @@ public class AuroraMeanderTexture : MonoBehaviour
     Texture2D tex;
     float[]   front;        // the buffer that was uploaded last
     float[]   back;         // the buffer the worker (or the row loop) writes
-    float[]   wFront, wBack; // the ribbon weight per texel (res × Rows), CPU only, swapped with front / back
+    float[]   wFront, wBack; // the ribbon weight per texel (res x Rows), CPU only, swapped with front / back
     int       nextRow;
 
     // ---- worker thread ------------------------------------------------------
@@ -92,8 +92,8 @@ public class AuroraMeanderTexture : MonoBehaviour
         {
             if (tex == null) return "no texture";
             bool th = threaded && Application.isPlaying && !workerFailed;
-            return th ? $"{tex.width}×{Rows}, worker thread, bake {lastBakeMs:F1} ms, {uploadsPerSecond} uploads/s"
-                      : $"{tex.width}×{Rows}, main thread, {Mathf.Clamp(rowsPerFrame, 1, Rows)} row(s)/frame" + (workerFailed ? " (worker failed: " + workerError + ")" : "");
+            return th ? $"{tex.width}x{Rows}, worker thread, bake {lastBakeMs:F1} ms, {uploadsPerSecond} uploads/s"
+                      : $"{tex.width}x{Rows}, main thread, {Mathf.Clamp(rowsPerFrame, 1, Rows)} row(s)/frame" + (workerFailed ? " (worker failed: " + workerError + ")" : "");
         }
     }
 
@@ -148,7 +148,7 @@ public class AuroraMeanderTexture : MonoBehaviour
             {
                 // the worker died (exception): fall back to the main thread, say so once
                 workerFailed = true;
-                Log("Meander worker thread stopped" + (workerError != null ? ": " + workerError : "") + " — baking on the main thread instead");
+                Log("Meander worker thread stopped" + (workerError != null ? ": " + workerError : "") + ", baking on the main thread instead");
                 StopWorker();
             }
 
@@ -253,7 +253,7 @@ public class AuroraMeanderTexture : MonoBehaviour
 
         for (int i = 0; i < res; i++)
         {
-            // texel centre → longitude in -π..π (shader: atan2(z, x) / 2π + 0.5)
+            // texel centre -> longitude in -pi..pi (shader: atan2(z, x) / 2 pi + 0.5)
             float lon = ((i + 0.5f) * invRes - 0.5f) * Mathf.PI * 2f;
             int o = baseIdx + i * 4;
             float shift = AuroraNoise.BandShift(lon, bp.t, seedMeander, bp.noiseScale);
@@ -262,11 +262,11 @@ public class AuroraMeanderTexture : MonoBehaviour
             dst[o + 2] = AuroraNoise.WidthNoise01(lon, bp.t, seedMeander, bp.noiseScale);
             // where the folded ribbon is in this column and how much of it (1.1.0, for the vessel
             // light): a presence-weighted scan over the fold's reach, not a fixed-point step (the
-            // fold's slope in latitude is far above 1, so iterating lat ← mean − fold(lat) bounces
+            // fold's slope in latitude is far above 1, so iterating lat <- mean - fold(lat) bounces
             // between unrelated points) and not the nearest crossing either (a crossing pair being
             // born or dying switched the column to another strand; either way the light flickered).
             // Every other texel (a 12-step scan); the ones between take the mean of their
-            // neighbours below — a light does not need the fold to the texel
+            // neighbours below, a light does not need the fold to the texel
             if ((i & 1) == 0)
             {
                 float latEff, w;
@@ -296,7 +296,7 @@ public class AuroraMeanderTexture : MonoBehaviour
         int res = tex.width;
         if (res < 2 || front.Length < res * Rows * 4) return false;
         int row = Mathf.Clamp(band, 0, 2) * 2 + Mathf.Clamp(hemi, 0, 1);
-        // texel i's centre is longitude ((i + 0.5) / res − 0.5) × 2π
+        // texel i's centre is longitude ((i + 0.5) / res - 0.5) x 2 pi
         float u  = (longitudeRad / (Mathf.PI * 2f) + 0.5f) * res - 0.5f;
         u -= Mathf.Floor(u / res) * res;                        // wrap
         int   i0 = Mathf.FloorToInt(u) % res, i1 = (i0 + 1) % res;

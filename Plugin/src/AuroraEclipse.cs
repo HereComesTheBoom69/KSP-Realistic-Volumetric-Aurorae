@@ -1,4 +1,4 @@
-// Realistic Volumetric Aurorae (RVA) — Copyright (c) 2026 HereComesTheBoom ("Realistic Volumetric Aurorae")
+// Realistic Volumetric Aurorae (RVA). Copyright (c) 2026 HereComesTheBoom ("Realistic Volumetric Aurorae")
 // SPDX-License-Identifier: CC-BY-NC-SA-4.0  (see LICENSE.txt)
 using System;
 
@@ -7,9 +7,9 @@ namespace RVA
     /// <summary>
     /// How much of the sun a body's parent hides from it (1.1.0). Laythe spends about an
     /// hour of every orbit in Jool's shadow, and while it does an aurora shows over the
-    /// whole moon, not just its night side — so the daylight fade is lifted by this much.
+    /// whole moon, not just its night side, so the daylight fade is lifted by this much.
     /// 0 = sun fully visible, 1 = total eclipse; the ramp in between is the penumbra
-    /// (first contact → totality, linear in angle, ~100 km wide at Laythe).
+    /// (first contact to totality, linear in angle, ~100 km wide at Laythe).
     /// Only the parent body is tested: it is the one shadow in the stock system that
     /// reaches, and lasts (a moon's shadow on its planet is a dot, and a sibling's never
     /// lines up for long). Positions are KSP's world positions, the same frame for all

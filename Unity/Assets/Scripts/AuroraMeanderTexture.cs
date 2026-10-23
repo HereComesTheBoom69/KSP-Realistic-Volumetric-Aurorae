@@ -1,4 +1,4 @@
-// Realistic Volumetric Aurorae (RVA) — Copyright (c) 2026 HereComesTheBoom ("Realistic Volumetric Aurorae")
+// Realistic Volumetric Aurorae (RVA). Copyright (c) 2026 HereComesTheBoom ("Realistic Volumetric Aurorae")
 // SPDX-License-Identifier: CC-BY-NC-SA-4.0  (see LICENSE.txt)
 using System;
 using System.Diagnostics;
@@ -8,19 +8,19 @@ using Debug = UnityEngine.Debug;
 
 /// <summary>
 /// Bakes the aurora's meander shift, flare factor and width noise into a small
-/// lookup texture (longitude × [band, hemisphere]) and feeds it to the aurora
+/// lookup texture (longitude x [band, hemisphere]) and feeds it to the aurora
 /// material as _MeanderTex.
 ///
-/// Layout: width = resolution (longitude, -π..π wrapping), height = 6 rows:
+/// Layout: width = resolution (longitude, -pi..pi wrapping), height = 6 rows:
 ///   row = band * 2 + hemisphere   (band 0..2, hemisphere 0 = north, 1 = south)
-///   R = meander shift + 0.5       (shift is ±0.225 in latNorm units)
+///   R = meander shift + 0.5       (shift is +/-0.225 in latNorm units)
 ///   G = flare 0..1                (shader: flare = lerp(0.7, 1.6, G))
-///   B = width noise 0..1          (shader: width × lerp(1-var, 1+var, B))
+///   B = width noise 0..1          (shader: width x lerp(1-var, 1+var, B))
 ///   A = unused
 ///
 /// Refresh: in play mode a worker thread bakes the WHOLE texture (all 6 rows
 /// at one animation time) continuously, and the newest bake is uploaded every
-/// frame — so the meander moves as smoothly as everything else in the shader.
+/// frame, so the meander moves as smoothly as everything else in the shader.
 /// A 256-texel bake is ~2-4 ms of CPU, which the worker hides entirely.
 /// Without the thread (editor, or threaded = false) rowsPerFrame rows are
 /// recomputed per frame on the main thread, the way v3 did it.
@@ -28,7 +28,7 @@ using Debug = UnityEngine.Debug;
 /// Attach to the same object as the aurora material user (the KSP plugin
 /// does this automatically; in the Unity test scene add it to the Aurora
 /// object and assign the material). Without it the shader's default gray
-/// texture gives zero meander and a neutral flare — still renders, just
+/// texture gives zero meander and a neutral flare: it still renders, just
 /// straighter bands.
 /// </summary>
 [ExecuteAlways]
@@ -36,7 +36,7 @@ public class AuroraMeanderTexture : MonoBehaviour
 {
     public Material auroraMaterial;
 
-    [Tooltip("Longitude samples around the planet. 256 ≈ 1.4° per texel.")]
+    [Tooltip("Longitude samples around the planet. 256 ~ 1.4° per texel.")]
     [Range(32, 1024)] public int resolution = 256;
 
     [Tooltip("Play mode: bake the whole LUT on a worker thread and upload the newest bake every frame.")]
@@ -76,8 +76,8 @@ public class AuroraMeanderTexture : MonoBehaviour
         {
             if (tex == null) return "no texture";
             bool th = threaded && Application.isPlaying && !workerFailed;
-            return th ? $"{tex.width}×{Rows}, worker thread, bake {lastBakeMs:F1} ms, {uploadsPerSecond} uploads/s"
-                      : $"{tex.width}×{Rows}, main thread, {Mathf.Clamp(rowsPerFrame, 1, Rows)} row(s)/frame" + (workerFailed ? " (worker failed: " + workerError + ")" : "");
+            return th ? $"{tex.width}x{Rows}, worker thread, bake {lastBakeMs:F1} ms, {uploadsPerSecond} uploads/s"
+                      : $"{tex.width}x{Rows}, main thread, {Mathf.Clamp(rowsPerFrame, 1, Rows)} row(s)/frame" + (workerFailed ? " (worker failed: " + workerError + ")" : "");
         }
     }
 
@@ -129,7 +129,7 @@ public class AuroraMeanderTexture : MonoBehaviour
             {
                 // the worker died (exception): fall back to the main thread, say so once
                 workerFailed = true;
-                Log("Meander worker thread stopped" + (workerError != null ? ": " + workerError : "") + " — baking on the main thread instead");
+                Log("Meander worker thread stopped" + (workerError != null ? ": " + workerError : "") + ", baking on the main thread instead");
                 StopWorker();
             }
 
@@ -232,7 +232,7 @@ public class AuroraMeanderTexture : MonoBehaviour
 
         for (int i = 0; i < res; i++)
         {
-            // texel centre → longitude in -π..π (shader: atan2(z, x) / 2π + 0.5)
+            // texel centre -> longitude in -pi..pi (shader: atan2(z, x) / 2 pi + 0.5)
             float lon = ((i + 0.5f) * invRes - 0.5f) * Mathf.PI * 2f;
             int o = baseIdx + i * 4;
             dst[o]     = AuroraNoise.BandShift(lon, t, seedMeander, noiseScale) + 0.5f;

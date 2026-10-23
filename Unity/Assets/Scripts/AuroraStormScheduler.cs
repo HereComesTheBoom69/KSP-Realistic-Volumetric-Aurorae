@@ -1,4 +1,4 @@
-// Realistic Volumetric Aurorae (RVA) — Copyright (c) 2026 HereComesTheBoom ("Realistic Volumetric Aurorae")
+// Realistic Volumetric Aurorae (RVA). Copyright (c) 2026 HereComesTheBoom ("Realistic Volumetric Aurorae")
 // SPDX-License-Identifier: CC-BY-NC-SA-4.0  (see LICENSE.txt)
 using UnityEngine;
 
@@ -9,7 +9,7 @@ using UnityEngine;
 ///
 /// In Play mode the intensity is driven by a random storm scheduler: long
 /// quiet periods at 0, occasional storms that ramp up to a random peak,
-/// hold, then ramp back down (asymmetric — recovery is slower than onset).
+/// hold, then ramp back down (asymmetric: recovery is slower than onset).
 ///
 /// In Edit mode the scheduler is paused; drag "Current Storm Intensity"
 /// (or tick Manual Override in Play mode) to preview any storm level.
@@ -102,7 +102,7 @@ public class AuroraStormScheduler : MonoBehaviour
 
     void Update()
     {
-        // Planet center → shader, so its ray-sphere math survives KSP's
+        // Planet center -> shader, so its ray-sphere math survives KSP's
         // floating origin. In the Unity test scene the Aurora object has no
         // parent and the planet sits at the origin, so this is skipped.
         if (auroraMaterial != null && transform.parent != null)

@@ -1,4 +1,4 @@
-// Realistic Volumetric Aurorae (RVA) — Copyright (c) 2026 HereComesTheBoom ("Realistic Volumetric Aurorae")
+// Realistic Volumetric Aurorae (RVA). Copyright (c) 2026 HereComesTheBoom ("Realistic Volumetric Aurorae")
 // SPDX-License-Identifier: CC-BY-NC-SA-4.0  (see LICENSE.txt)
 using System;
 using UnityEngine;
@@ -6,12 +6,12 @@ using UnityEngine;
 namespace RVA
 {
     /// <summary>
-    /// A 64 × 64 blue-noise tile for the march's per-pixel sample offset (1.1.0). Made
-    /// once, offline, with Ulichney's void-and-cluster method (toroidal, σ = 1.5, every
+    /// A 64 x 64 blue-noise tile for the march's per-pixel sample offset (1.1.0). Made
+    /// once, offline, with Ulichney's void-and-cluster method (toroidal, sigma = 1.5, every
     /// grey level exactly 16 times) and embedded here so the shader bundle needs no
     /// texture asset. Why not the interleaved gradient noise the shader used before:
-    /// wherever the march under-samples a feature — a 12 km patch crossed by two 7 km
-    /// steps, a far band's thin ribbons — each pixel's result swings with its offset,
+    /// wherever the march under-samples a feature (a 12 km patch crossed by two 7 km
+    /// steps, a far band's thin ribbons), each pixel's result swings with its offset,
     /// and the offset pattern itself shows through. Gradient noise is a fine diagonal
     /// grating, so what showed were stripes; blue noise has no structure below a few
     /// texels, so what shows is grain, and the low-res upsample's smoothing takes most
@@ -54,12 +54,12 @@ namespace RVA
             }
             catch (Exception e)
             {
-                Debug.LogWarning($"[RVA] blue-noise tile could not be created ({e.GetType().Name}: {e.Message}) — falling back to gradient noise");
+                Debug.LogWarning($"[RVA] blue-noise tile could not be created ({e.GetType().Name}: {e.Message}), falling back to gradient noise");
                 return null;
             }
         }
 
-        // 64 × 64 bytes, row-major, base64
+        // 64 x 64 bytes, row-major, base64
         const string Data =
             "8xxtQKP2SnHA+4Bo8BF7NSC52qRjHDWIJkbQU+I1Ysd4DW4xxtyNK8+s/nY/mSPRVzG1bM2si/K6Mskc9LEof8ZbuukHZy7gAlwa" +
             "zyxZ6dKbXT0ReNSs3HPvHYOwAfI/nOJH/RJeuwKASZEo4bto+wDJkEVdE9dRFqtGkHgOaEUAlS55mMqzj6c024ikwkaGC/KO5MKU" +

@@ -1,4 +1,4 @@
-// Realistic Volumetric Aurorae (RVA) — Copyright (c) 2026 HereComesTheBoom ("Realistic Volumetric Aurorae")
+// Realistic Volumetric Aurorae (RVA). Copyright (c) 2026 HereComesTheBoom ("Realistic Volumetric Aurorae")
 // SPDX-License-Identifier: CC-BY-NC-SA-4.0  (see LICENSE.txt)
 using UnityEngine;
 
@@ -13,7 +13,7 @@ using UnityEngine;
 /// </summary>
 public static class AuroraNoise
 {
-    /// <summary>Meander shift of a band centreline (in latNorm units, ±0.225 max).
+    /// <summary>Meander shift of a band centreline (in latNorm units, +/-0.225 max).
     /// seedOffset must already include the +500 southern-hemisphere offset.</summary>
     public static float BandShift(float longitudeRad, float t, float seedOffset, float noiseScale)
     {
@@ -45,7 +45,7 @@ public static class AuroraNoise
         return SmoothStep(0.35f, 0.75f, flareNoise);
     }
 
-    /// <summary>Ribbon fold displacement (latNorm units) at a surface point — the
+    /// <summary>Ribbon fold displacement (latNorm units) at a surface point, the
     /// CPU twin of the shader's foldAt() (value only). hemi: 0 north, 1 south.
     /// One fold field for all bands; each band samples it through its own
     /// rotated + shifted domain, scaled by independence (shader: _BandIndependence).</summary>
@@ -66,7 +66,7 @@ public static class AuroraNoise
     }
 
     /// <summary>Latitude (latNorm) of the folded ribbon nearest the mean path at this
-    /// longitude: the zero of F(l) = l − latMean + fold(l) closest to latMean.
+    /// longitude: the zero of F(l) = l - latMean + fold(l) closest to latMean.
     /// Found by scanning the fold's reach (strong folds make F non-monotonic, so
     /// a fixed-point iteration would bounce) and interpolating the crossing.</summary>
     public static float RibbonLatitude(float longitudeRad, float latMean, float t, int hemi,

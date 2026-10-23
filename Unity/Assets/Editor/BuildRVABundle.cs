@@ -1,4 +1,4 @@
-// Realistic Volumetric Aurorae (RVA) — Copyright (c) 2026 HereComesTheBoom ("Realistic Volumetric Aurorae")
+// Realistic Volumetric Aurorae (RVA). Copyright (c) 2026 HereComesTheBoom ("Realistic Volumetric Aurorae")
 // SPDX-License-Identifier: CC-BY-NC-SA-4.0  (see LICENSE.txt)
 using UnityEditor;
 using UnityEngine;
@@ -28,7 +28,7 @@ public class BuildRVABundle
         }
         if (bundleNames.Length == 0)
         {
-            Debug.LogError("[BuildRVABundle] NO BUNDLES REGISTERED — select Aurora_Shader.shader and check the AssetBundle dropdown at the bottom of the Inspector");
+            Debug.LogError("[BuildRVABundle] NO BUNDLES REGISTERED: select Aurora_Shader.shader and check the AssetBundle dropdown at the bottom of the Inspector");
             return;
         }
 
@@ -39,7 +39,7 @@ public class BuildRVABundle
 
         if (manifest == null)
         {
-            Debug.LogError("[BuildRVABundle] Build returned null — build failed (see errors above)");
+            Debug.LogError("[BuildRVABundle] Build returned null, build failed (see errors above)");
             return;
         }
 
