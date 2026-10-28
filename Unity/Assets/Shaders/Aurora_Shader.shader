@@ -44,7 +44,7 @@
 //     averages away.
 //   The temporal globals (_RayJitter, _TemporalOffset) are set per draw by the
 //   renderer's command buffer, not on the material: the scaled-space instances copy
-//   the local material every frame, and a global survives that. Build tag 1110.
+//   the local material every frame, and a global survives that. Build tag 1116.
 //
 // v3 changes
 //   - Meander + flare come from a small lookup texture (_MeanderTex,
@@ -149,7 +149,7 @@
 //
 // Output is linear HDR, additive. In KSP a blit pass tonemaps it.
 //
-// _DebugMode: 0 normal | 1 solid red (mesh test) | 2 solid blue (shell hit)
+// _DebugMode: 0 normal | 1 solid red (mesh test) | 2 solid blue (shell hit) | 7 occlusion probe | 8 depth probe (see the depth block)
 //             6 probe: R = max density, G = avg altNorm, B = hit fraction
 // =============================================================================
 
@@ -248,6 +248,12 @@ Shader "RVA/Aurora"
         // 1.1.0, another body's aurora drawn from here: a sphere that hides it (the body the
         // vessel is at: xyz relative to this aurora's planet centre, w = radius; w = 0 none)
         _Occluder     ("Occluder sphere (set by C#)", Vector) = (0, 0, 0, 0)
+        _OccluderShell ("Occluder terrain shell, inner and outer radius (set by C#)", Vector) = (0, 0, 0, 0)
+        // 1.1.0: the occluder body's scaled-space model, drawn by C# with this camera's matrices
+        // while KSP shows that model instead of the terrain (eye depth in metres, 0 = nothing).
+        // xy = 1 / the aurora buffer's size, z = 1 while the model depth is in use
+        _OccluderDepth ("Occluder body model, 1 / eye depth (set by C#)", 2D) = "black" {}
+        _OccluderDepthParams ("Occluder model depth params (set by C#)", Vector) = (0, 0, 0, 0)
         // 1.1.0: 1 = every sample counts as beyond the cloud tops (a distant body's aurora is
         // behind this world's clouds everywhere), so the composite occludes all of it per pixel
         _ForceFar     ("All samples to the far target", Float) = 0
@@ -332,7 +338,7 @@ Shader "RVA/Aurora"
         // compares it with RVABootstrap.ShaderBuild; a mismatch means the DLL and the
         // bundle were built from different sources (new features silently inert). Bump
         // both together whenever a uniform is added or renamed.
-        _RVAShaderBuild ("Shader build (read by C#)", Float) = 1110
+        _RVAShaderBuild ("Shader build (read by C#)", Float) = 1116
     }
 
     SubShader
@@ -365,6 +371,9 @@ Shader "RVA/Aurora"
             float4 _EmissionMapSize;
             float  _SphereRadius;
             float4 _Occluder;
+            float4 _OccluderShell;     // x = inner, y = outer radius of the occluder body's terrain shell (1.1.0)
+            sampler2D _OccluderDepth;  // the occluder body's scaled-space model, 1 / eye depth in metres, 0 = nothing (1.1.0)
+            float4 _OccluderDepthParams;   // xy = 1 / aurora buffer size, z = 1 while the model depth is in use
             float  _ForceFar;
             float  _StepLength, _StepNear, _MaxSteps, _Jitter, _StepGrowth, _StepFarMul, _StepFilter;
             sampler2D _BlueNoise;
@@ -1168,6 +1177,7 @@ Shader "RVA/Aurora"
                 // Stop at the occluder sphere (1.1.0): another body's aurora seen
                 // from the surface or orbit of this one, like Jool's from Laythe. Exact,
                 // at any distance, where the depth buffer is far too coarse.
+                bool sphereCut = false;
                 if (_Occluder.w > 0.0)
                 {
                     float3 roO = ro - _Occluder.xyz;
@@ -1181,7 +1191,7 @@ Shader "RVA/Aurora"
                             float tO = -bO - sqrt(dO);
                             if (tO > 0.0 && tO < tEnd)
                             {
-                                tEnd = tO;
+                                tEnd = tO; sphereCut = true;
                                 if (gapLen > 0.0 && gapStart + gapLen > tEnd) { if (gapStart < tEnd) tEnd = gapStart; gapLen = 0.0; }
                             }
                         }
@@ -1193,9 +1203,28 @@ Shader "RVA/Aurora"
                 // Kerbin). Farther out the depth buffer is too coarse (it
                 // terraces into visible layers), and the analytic planet above
                 // already occludes correctly.
+                // Another body's aurora (an occluder sphere is set) is a different
+                // case: it lies far beyond anything the local scene draws, so a depth
+                // sample that lands on the ground of the body we are at hides it, at
+                // whatever distance, and the coarse far depth does not matter for
+                // that. The occluder sphere alone was not enough: the mountains on the
+                // limb stand above it, and Kerbin's aurora showed through them from Mun
+                // orbit, just below the horizon. A sample counts as that ground when
+                // the point it reconstructs lies within the body's terrain shell, from
+                // 15 % under the sphere to 2 % above it. The sky, whatever depth value
+                // it carries, reconstructs far outside that shell, so the test does not
+                // depend on the far plane (the sky sat below it on at least one setup,
+                // and a plain "closer than the far plane" test hid the whole aurora).
+                // KSP builds the terrain around the vessel and up to its horizon, and above
+                // the body's PQS limit (120 km on the Mun) drops it for the body's scaled-
+                // space model, which another camera draws. A camera zoomed far out above the
+                // vessel sees past the terrain that exists, the depth buffer holds sky at the
+                // limb, and the aurora showed through it again. C# then draws that model into
+                // _OccluderDepth with this camera's own matrices, and a pixel reads it at its
+                // own raster position: both buffers were rasterised the same way, no flip.
                 float tScene  = 1e30;
                 float depthKm = 0.0;      // -> far.a for the depth-aware upsample
-                bool  nearHit = false;
+                bool  nearHit = false, farHit = false;
                 if (_UseSceneDepth > 0.5)
                 {
                     float rawDepth = SAMPLE_DEPTH_TEXTURE_PROJ(_CameraDepthTexture, UNITY_PROJ_COORD(i.screenPos));
@@ -1203,6 +1232,40 @@ Shader "RVA/Aurora"
                     float3 camFwd  = -UNITY_MATRIX_V[2].xyz;
                     tScene  = sceneZ / max(dot(rd, camFwd), 0.05);
                     nearHit = sceneZ < _SphereRadius * 0.05;
+                    if (_Occluder.w > 0.0 && !nearHit)
+                    {
+                        // a sample still at the clear value (0 or 1, whichever way round the
+                        // buffer runs) is nothing drawn, whatever distance it decodes to.
+                        // The shell is the body's terrain: from a little under the datum to
+                        // above its highest point (_OccluderShell, set by C# from a terrain
+                        // scan). It is not tied to the occluder sphere, which sits at the datum
+                        // in low orbit, where a 2 % band over it missed the Mun's highlands.
+                        bool cleared = rawDepth <= 0.0 || rawDepth >= 1.0;
+                        if (!cleared)
+                        {
+                            float rS = length(ro + rd * tScene - _Occluder.xyz);
+                            farHit = rS > _OccluderShell.x && rS < _OccluderShell.y;
+                        }
+                        // Otherwise the body's scaled-space model, when C# has drawn it (1 / eye
+                        // depth in metres, 0 = nothing). It counts where the depth buffer
+                        // is clear and also where it holds something that lands outside the
+                        // shell (the vessel seen from far out, a value the buffer decodes
+                        // oddly): the model is the body's ground either way. No shell test on
+                        // it: that buffer holds nothing but the body, and KSP's model does not
+                        // follow the terrain's heights exactly (the Mun's stood above the shell
+                        // on parts of the limb, and the aurora came back there as the orbit
+                        // carried the limb under Kerbin). Whether the hit is in front of the
+                        // aurora is settled below, like every other cut.
+                        if (!farHit && _OccluderDepthParams.z > 0.5)
+                        {
+                            float iM = tex2Dlod(_OccluderDepth, float4(i.pos.xy * _OccluderDepthParams.xy, 0.0, 0.0)).r;
+                            if (iM > 0.0)                               // 1 / eye depth, 0 = nothing drawn
+                            {
+                                farHit = true;
+                                tScene = (1.0 / iM) / max(dot(rd, camFwd), 0.05);
+                            }
+                        }
+                    }
                     // v3.24: the depth goes to the upsample only where the march can
                     // have been cut by it (the near 5 % of the radius above). Farther
                     // depth (terrain seen from orbit, the sky) is 0 = "agrees with
@@ -1211,11 +1274,64 @@ Shader "RVA/Aurora"
                     // used to break the smoothing into per-texel grain on one side of
                     // the horizon line.
                     depthKm = nearHit ? min(sceneZ, 1e7) * 0.001 : 0.0;
-                    if (nearHit && tScene < tEnd)
+                    if ((nearHit || farHit) && tScene < tEnd)
                     {
                         tEnd = tScene;
                         if (gapLen > 0.0 && gapStart + gapLen > tEnd) { if (gapStart < tEnd) tEnd = gapStart; gapLen = 0.0; }
                     }
+                }
+                // Debug 7, the occlusion probe: what this pixel's depth sample was taken
+                // for. Red = near (vessel, terrain within 5 % of the radius), green = the
+                // occluder body's ground, blue = sky (or no depth); half as bright where
+                // the occluder sphere ends the ray before the depth does.
+                if (_DebugMode > 6.5 && _DebugMode < 7.5)
+                {
+                    float3 c = nearHit ? float3(1, 0, 0) : (farHit ? float3(0, 1, 0) : float3(0, 0, 1));
+                    return outNF(c * (sphereCut ? 0.5 : 2.0), float3(0, 0, 0), 1.0, depthKm, 0.0);
+                }
+                // Debug 8, the depth probe: how far the depth sample says the scene is, in bands.
+                // White = at the far plane or beyond it (the sky, when the sky is where it should
+                // be); red = 1000 km or more; orange = 100 to 1000 km; yellow = 10 to 100 km;
+                // green = 1 to 10 km; cyan = 100 m to 1 km; blue = under 100 m; black = no depth.
+                if (_DebugMode > 7.5 && _DebugMode < 8.5)
+                {
+                    float3 c = float3(0, 0, 0);
+                    if (_UseSceneDepth > 0.5)
+                    {
+                        float z = tScene * max(dot(rd, -UNITY_MATRIX_V[2].xyz), 0.05);    // back to eye depth
+                        float l = log10(max(z, 1.0));
+                        if      (z >= _ProjectionParams.z * 0.98) c = float3(1, 1, 1);
+                        else if (l >= 6.0) c = float3(1, 0, 0);
+                        else if (l >= 5.0) c = float3(1, 0.5, 0);
+                        else if (l >= 4.0) c = float3(1, 1, 0);
+                        else if (l >= 3.0) c = float3(0, 1, 0);
+                        else if (l >= 2.0) c = float3(0, 1, 1);
+                        else               c = float3(0, 0, 1);
+                    }
+                    return outNF(c * 2.0, float3(0, 0, 0), 1.0, depthKm, 0.0);
+                }
+                // Debug 9, the model probe: the occluder body's scaled-space model as C# drew it
+                // for the ground test, in the depth probe's bands; dark blue = nothing drawn at
+                // this pixel, black = the model is not in use.
+                if (_DebugMode > 8.5 && _DebugMode < 9.5)
+                {
+                    float3 c = float3(0, 0, 0);
+                    if (_OccluderDepthParams.z > 0.5)
+                    {
+                        float iM = tex2Dlod(_OccluderDepth, float4(i.pos.xy * _OccluderDepthParams.xy, 0.0, 0.0)).r;
+                        if (iM <= 0.0) c = float3(0, 0, 0.3);
+                        else
+                        {
+                            float l = log10(max(1.0 / iM, 1.0));
+                            if      (l >= 6.0) c = float3(1, 0, 0);
+                            else if (l >= 5.0) c = float3(1, 0.5, 0);
+                            else if (l >= 4.0) c = float3(1, 1, 0);
+                            else if (l >= 3.0) c = float3(0, 1, 0);
+                            else if (l >= 2.0) c = float3(0, 1, 1);
+                            else               c = float3(0, 0, 1);
+                        }
+                    }
+                    return outNF(c * 2.0, float3(0, 0, 0), 1.0, depthKm, 0.0);
                 }
 
                 // Irradiance under this pixel (-> output alpha): the emission map

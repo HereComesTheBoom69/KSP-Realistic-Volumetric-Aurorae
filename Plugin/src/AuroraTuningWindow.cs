@@ -36,6 +36,9 @@ namespace RVA
         bool    cameraLocked;
         string  flash = "";
         float   flashUntil;
+        bool    depthProbeOn;                 // dev: log the depth texture under the mouse once a second
+        float   depthProbeNext;
+        string  depthProbeLast = "";
 
         // Dev build: every setting and every debug control. Release: the handful a
         // player realistically wants (the rest keep their shipped values).
@@ -85,6 +88,23 @@ namespace RVA
 
             float dt = Time.unscaledDeltaTime;
             if (dt > 0f) fps = Mathf.Lerp(fps, 1f / dt, 0.05f);
+            if (depthProbeOn && visible && Time.unscaledTime >= depthProbeNext)
+            {
+                depthProbeNext = Time.unscaledTime + 1f;
+                var inst = EditInstance;
+                AuroraRenderer rend = EditingLocal ? owner.Renderer : (inst != null ? inst.Renderer : null);
+                if (rend != null)
+                {
+                    try
+                    {
+                        string report = rend.DepthProbe(new Vector2(Input.mousePosition.x, Input.mousePosition.y));
+                        Debug.Log("[RVA:depth] " + editBody + ": " + report);
+                        int nl = report.IndexOf('\n');
+                        depthProbeLast = nl > 0 ? "   " + report.Substring(nl + 1).Split('\n')[0].Trim() : report;
+                    }
+                    catch (Exception e) { depthProbeLast = "depth readout failed: " + e.Message; depthProbeOn = false; }
+                }
+            }
 
             if (!visible && cameraLocked) Unlock();
         }
@@ -352,6 +372,24 @@ namespace RVA
                                     AuroraRenderer.EvAfterForwardOpaque, AuroraRenderer.EvBeforeForwardAlpha, AuroraRenderer.EvAfterForwardAlpha,
                                     AuroraRenderer.EvBeforeImageEffects, AuroraRenderer.EvAfterImageEffects, AuroraRenderer.EvAfterEverything);
             changed |= Toggle("Vessel / nearby terrain occlude the aurora (depth buffer, < 30 km)", ref s.sceneDepthOcclusion, nameof(s.sceneDepthOcclusion));
+            if (rend != null)
+            {
+                bool dp = GUILayout.Toggle(depthProbeOn, " Depth readout: once a second, log what the depth texture holds under the mouse (and a 3x3 grid) to KSP.log, prefix [RVA:depth]", GUILayout.Width(ToggleW + DefW));
+                if (dp != depthProbeOn) { depthProbeOn = dp; depthProbeNext = 0f; }
+                if (depthProbeOn && !string.IsNullOrEmpty(depthProbeLast)) GUILayout.Label(depthProbeLast, Wrap);
+            }
+            // 1.1.1: build the terrain map of the body the vessel is at, whether or not an aurora is in
+            // view from it (Gilly and Ike for the Eve and Duna aurorae to come), so it can ship
+            CelestialBody here = FlightGlobals.currentMainBody;
+            AuroraTerrainMap hereMap = here != null ? AuroraTerrainMap.Peek(here) : null;
+            if (here == null) { }
+            else if (here.pqsController == null) GUILayout.Label($"Terrain map for {here.bodyName}: none needed, no terrain", Wrap);
+            else if (hereMap == null)
+            {
+                if (GUILayout.Button($"Build the terrain map for {here.bodyName} now (1024x512, about 20 s, lands in PluginData/terrain)", GUILayout.Width(ToggleW + DefW)))
+                    AuroraTerrainMap.Get(here);
+            }
+            else GUILayout.Label($"Terrain map for {here.bodyName}: {(hereMap.Ready ? $"ready, {hereMap.Source}, surface from datum {hereMap.MinHeight:+0;-0} m to datum {hereMap.MaxHeight:+0;-0} m" : hereMap.Failed ? "failed, see KSP.log" : $"{hereMap.Progress * 100f:F0} %")}", Wrap);
             if (rend != null && GUILayout.Button("Log cameras + command buffers to KSP.log (shows where EVE / Scatterer draw)"))
             {
                 string dump = rend.DumpCameraInfo();
@@ -394,6 +432,9 @@ namespace RVA
             changed |= ChoiceF(ref s.debugMode, 1f, "red mesh");
             changed |= ChoiceF(ref s.debugMode, 2f, "blue shell");
             changed |= ChoiceF(ref s.debugMode, 6f, "density probe");
+            changed |= ChoiceF(ref s.debugMode, 7f, "occlusion probe (red near, green ground, blue sky)");
+            changed |= ChoiceF(ref s.debugMode, 8f, "depth probe (white = far plane, red 1000 km+, orange 100 km+, yellow 10 km+, green 1 km+, cyan, blue)");
+            changed |= ChoiceF(ref s.debugMode, 9f, "model probe (the body's scaled model as drawn for the ground test: same bands, dark blue = none, black = model off)");
             GUILayout.EndHorizontal();
             }   // Dev
 

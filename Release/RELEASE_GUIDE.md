@@ -35,6 +35,13 @@ on its own after SpaceDock.
        GameData/RealisticVolumetricAurorae/Plugins/RealisticVolumetricAurorae.dll
        GameData/RealisticVolumetricAurorae/Config/*.cfg                  (the per-body presets, 1.1.0)
 
+4a. **1.1.1 checks.** The Mun at 15 km with Kerbin on the horizon: its aurora is cut at
+   the ridges on the limb, with the camera close to the vessel and zoomed all the way out,
+   and stays cut as the orbit runs (the status line says "on its model (... terrain map)"
+   once zoomed out). KSP.log on start: `[RVA:Terrain] Mun: terrain map 1024x512 ready
+   (from PluginData/terrain)`, not "building", for the seven shipped bodies. No fade of
+   Kerbin's aurora with the camera angle at the Mun.
+
 4b. **1.1.0 checks.** Jool orbit at 300 to 900 km (inside the band: no rings, no seam at
    the band's lower horizon). The view of Jool's limb from Laythe's surface and from
    Laythe orbit (its aurora hidden by Laythe's terrain and clouds, visible above the
@@ -49,7 +56,16 @@ on its own after SpaceDock.
    rebuilds and the log says "Main body changed"). The map view zoomed to Jool and to
    Kerbin, and the tracking station. With SPVE installed: no second, flat aurora on Jool
    or Laythe (the removal patch found SPVE's layers; if one is still there, see the
-   patch's header).
+   patch's header). From Mun orbit with Kerbin just below the horizon: its aurora is cut off
+   at the Mun's terrain, not visible through the ground near the limb; the same from the
+   Mun's surface, and from a 15 km orbit with the camera zoomed all the way out, if your
+   camera zooms far, and from a high orbit (the plugin then tests against its own model of
+   the Mun: the body's status line in the window says "on its model (camera N km above the
+   vessel, terrain map)" or "(terrain off, terrain map)", and KSP.log gets a line when it
+   switches). On the first visit KSP.log shows `[RVA:Terrain] Mun: building a 1024x512
+   terrain map` and, some seconds later, `terrain map 1024x512 ready (built in N s)`; the
+   status says "smooth model, map N %" in between. The map lands in PluginData/terrain/,
+   which the packager does not ship.
 
    **Temporal accumulation** (window, Performance section, on by default): whip the
    camera round the vessel and stop. There should be no aurora trailing behind the
@@ -67,8 +83,33 @@ on its own after SpaceDock.
    and "fading ...". Drag the minutes slider down to 1 and the next storm is due within
    the minute.
 
+4d. **Terrain maps (1.1.0).** The plugin hides another body's aurora behind the terrain of
+   the body you are at using a height map of that terrain, built once per body from the
+   terrain's height function (about 20 s at 2.5 ms a frame, with an FPS dip while it runs)
+   and kept in `GameData/RealisticVolumetricAurorae/PluginData/terrain/<body>.rvaterrain`
+   (1 MB each). A map is built only where another body's aurora is in view and the body
+   has terrain, so the stock bodies that get one are the Mun and Minmus (Kerbin's aurora)
+   and Laythe, Vall, Tylo, Bop and Pol (Jool's and Laythe's). Jool gets none: it has no
+   PQS, so there is nothing to map and its scaled-space model is exact as it is (KSP.log
+   says so). Build the seven before packaging so users never see the smooth stand-in:
+   with a dev or release build installed, use the cheat menu (Alt+F12, Cheats, Set Orbit)
+   to put a vessel in orbit around each of those bodies in turn, wait for
+   `[RVA:Terrain] <body>: terrain map 1024x512 ready` in KSP.log (the body's status line
+   in the window says "smooth model, map N %" until then), then copy the seven
+   `.rvaterrain` files from your install's `PluginData/terrain/` into the kit's
+   `GameData/RealisticVolumetricAurorae/PluginData/terrain/` and commit them. For a body
+   no aurora is in view from yet (Gilly and Ike, for the Eve and Duna aurorae to come),
+   the dev window has a button in the Diagnostics section, "Build the terrain map for
+   <body> now", which builds it regardless; ship those too.
+   The packager ships whatever that folder holds and warns if it is missing. A planet
+   pack's bodies build theirs on first visit. Your own mod list does not matter for the
+   build: the map samples the PQS height function, which Kopernicus leaves at stock
+   without a pack and Parallax does not touch; and each file carries the terrain's height
+   at 48 fixed points, so a user whose terrain differs there (a pack rewriting a stock
+   body) gets a fresh map built instead of a wrong one.
+
 4c. **DLL and bundle from the same source.** After rebuilding either, start KSP and find
-   `[RVA] Shader build 1110 matches the plugin` in KSP.log (the window's status line
+   `[RVA] Shader build 1116 matches the plugin` in KSP.log (the window's status line
    shows it too). A `SHADER BUILD ... DOES NOT MATCH PLUGIN` warning means one of the
    two is stale. Rebuild it from the current kit before testing anything else.
 5. **Test the zip, not your working folder.** Move your own
@@ -141,7 +182,7 @@ post.
 Post in **Add-on Releases**. The add-on posting rules, applied to RVA:
 
 - The title carries the KSP version and the mod version:
-  `[1.12.x] Realistic Volumetric Aurorae (RVA) v1.1.0 - volumetric aurorae for Kerbin, Jool and Laythe`
+  `[1.12.x] Realistic Volumetric Aurorae (RVA) v1.1.1 - volumetric aurorae for Kerbin, Jool and Laythe`
 - The licence is named in the post **and** included in the download (it is, as
   `LICENSE.txt` in the zip).
 - A link to the source (GitHub). Plugins must have their source available.

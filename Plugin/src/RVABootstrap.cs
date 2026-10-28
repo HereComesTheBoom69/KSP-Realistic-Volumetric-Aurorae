@@ -19,7 +19,7 @@ namespace RVA
         public static Shader AuroraShader { get; private set; }
         /// <summary>The shader build this plugin was written against: _RVAShaderBuild in Aurora_Shader.shader.
         /// Bumped together with it whenever a uniform is added or renamed (1.1.0).</summary>
-        public const int ShaderBuild = 1110;
+        public const int ShaderBuild = 1116;
         /// <summary>The build tag the loaded bundle reports (0 = a bundle from before the tag, -1 = unreadable).</summary>
         public static int ShaderBuildFound { get; private set; }
         public static bool ShaderBuildMatches => ShaderBuildFound == ShaderBuild;
@@ -31,7 +31,7 @@ namespace RVA
 
         /// <summary>Kit version, logged at startup and shown in the window title,
         /// so it is always obvious which DLL KSP actually loaded.</summary>
-        public const string Version = "1.1.0";
+        public const string Version = "1.1.1";
 
         const string LogPrefix = "[RVA]";
         const string ModRelativePath    = "GameData/RealisticVolumetricAurorae";
@@ -370,6 +370,7 @@ namespace RVA
             // Renderer: low-res command-buffer render + blit composite
             renderer = auroraGO.AddComponent<AuroraRenderer>();
             renderer.auroraMaterial   = material;
+            renderer.planetBody       = body;
             renderer.blitShader       = RVABootstrap.BlitShader;
             Log("  AuroraRenderer attached");
 
@@ -542,7 +543,7 @@ namespace RVA
                 renderer.exposure       = s.exposure;
                 renderer.flipY          = s.flipY;
                 renderer.compositeEvent = s.compositeEvent;
-                renderer.cloudOcclusion = s.cloudOcclusion;
+                renderer.cloudOcclusion = s.cloudOcclusion && body != null && body.atmosphere;   // EVE's cloud buffer is only fresh where EVE draws clouds: bodies with an atmosphere
                 renderer.cloudBufferFormat = s.cloudBufferFormat;
                 renderer.bufferFlipY     = s.cloudBufferFlipY;
                 renderer.sceneDepthOcclusion = s.sceneDepthOcclusion;

@@ -1,5 +1,49 @@
 # Changelog
 
+## 1.1.1 (2026-10-28)
+
+**Another body's aurora now hides behind the terrain of the body you are at, at every
+altitude and zoom.** Kerbin's from the Mun, Jool's from Laythe and the other moons.
+
+### Fixed
+
+- Another body's aurora seen through the ground of the body you are at, just below its
+  horizon (Kerbin's from Mun orbit). Three causes, all fixed:
+  - The depth test counted a sample as that body's ground only within 2 % of the datum
+    sphere, and the Mun's highlands on the limb stand higher than that. A sample now counts
+    as ground when it lands anywhere in the body's terrain shell, from a little under the
+    datum to above its highest point, which the plugin finds by sampling the terrain once
+    per session.
+  - With the camera zoomed far out, or from a high orbit, KSP unloads the body's terrain
+    and shows its smooth distant model instead, which is drawn by another camera and never
+    reaches the depth buffer, so there was nothing left to test against but the datum. The
+    plugin now builds its own model of the body from the terrain's height function, which
+    never switches off: a 1024 x 512 height map of the body pushes out a dense sphere that
+    is drawn into a depth buffer of its own, and the cut follows the real highlands from
+    any distance. The maps of the stock bodies that need one ship in `PluginData/terrain/`
+    (1 MB each); any other body's is built the first time you are there with another
+    body's aurora in view, about twenty seconds with an FPS dip, and kept. A shipped map
+    is checked against the terrain in your game and rebuilt if a planet pack has changed
+    that body.
+  - The sphere and the model were anchored on the body's local transform, which KSP
+    leaves behind on the orbit while the terrain is unloaded. They follow the body's
+    orbital position now, and so does the aurora's own centre.
+- Another body's aurora fading out or vanishing in parts of the screen around an airless
+  body (Kerbin's from Mun orbit, with nothing in front of it). The per-pixel cloud
+  occlusion multiplies the aurora by EVE's cloud buffer, and around a body where EVE draws
+  no volumetric clouds that buffer keeps whatever it last held. The cloud occlusion is now
+  used only while the body you are at has an atmosphere.
+- Shader build tag 1116. A DLL and a bundle from different builds say so in KSP.log and
+  in the window, as before.
+
+### Dev build
+
+- Three more views on the shader debug row: an occlusion probe (what each pixel's depth
+  sample was taken for), a depth probe (how far the depth sample says the scene is) and a
+  model probe (the body model as the plugin draws it). A depth readout that logs what the
+  buffers hold under the mouse once a second. The body's status line names the ground test
+  in use and how far a terrain map has got.
+
 ## 1.1.0 (2026-10-22)
 
 **Jool and Laythe get aurorae, and the plugin becomes multi-body.**

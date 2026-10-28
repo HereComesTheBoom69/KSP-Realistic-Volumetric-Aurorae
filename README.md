@@ -1,4 +1,4 @@
-# Realistic Volumetric Aurorae (RVA), build kit, v1.1.0
+# Realistic Volumetric Aurorae (RVA), build kit, v1.1.1
 
 Volumetric polar aurorae for Kerbin, Jool and Laythe in KSP 1.12.x. A raymarched glow
 layer rendered at reduced resolution and composited onto the flight camera, with
@@ -31,9 +31,10 @@ Unity/Assets/            drop into the Unity 2019.4.18f1 project
   Scripts/AuroraStormScheduler.cs, AuroraNoise.cs, AuroraMeanderTexture.cs   (older copies for the test scene; the plugin's are current)
   Editor/BuildRVABundle.cs     (menu: RVA > Build Shader Bundle)
 Plugin/                  open RealisticVolumetricAurorae.csproj in Visual Studio (configurations Release and Dev)
-  src/   13 files: RVABootstrap (bootstrap, flight and tracking station setups, scaled driver), AuroraRenderer,
+  src/   14 files: RVABootstrap (bootstrap, flight and tracking station setups, scaled driver), AuroraRenderer,
          AuroraSettings, AuroraConfigs, AuroraTuningWindow, AuroraDiagnostics, AuroraNoise, AuroraMeanderTexture,
-         AuroraStormScheduler, AuroraVesselLight, AuroraEclipse, AuroraBlueNoise, ScaledAuroraInstance
+         AuroraStormScheduler, AuroraVesselLight, AuroraEclipse, AuroraBlueNoise, ScaledAuroraInstance,
+         AuroraTerrainMap (height maps of the bodies, for hiding another body's aurora behind their terrain)
   refs/  copy 7 KSP DLLs here (see the txt inside)
 GameData/RealisticVolumetricAurorae/   copy into KSP's GameData once the bundle and the DLL are built
   Bundles/rva_shaders                  (built in Unity, see below)

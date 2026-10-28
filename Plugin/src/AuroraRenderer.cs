@@ -37,6 +37,21 @@ using UnityEngine.Rendering;
 ///     as shader GLOBALS from the command buffer, not on the material: the
 ///     scaled-space instances copy the local material every frame.
 ///
+///   1.1.0 OCCLUDER MODEL DEPTH (another body's aurora drawn from here): above the
+///     body's PQS limit (120 km on the Mun) KSP replaces its terrain with its
+///     scaled-space model, which another camera draws, so the flight camera's depth
+///     buffer holds sky at the limb and the aurora showed through the ground there.
+///     While that is the case the instance hands over the model (occluderMesh, its
+///     rotation and scale in metres) and the render buffer first draws it, with this
+///     camera's own matrices, into a buffer of its own (blit shader pass 5, eye depth
+///     as 1 / metres, max-blended onto a clear to 0, so no depth buffer is involved). The
+///     march reads that buffer where the scene depth is clear or lands outside the
+///     body's shell. Same camera, same matrices: the two buffers line up by raster
+///     position. The dev window's "model probe" shows the buffer itself. The model is
+///     a sphere pushed out by a height map of the body's terrain (AuroraTerrainMap), so
+///     its silhouette carries the real highlands; KSP's smooth scaled-space model stands
+///     in until the map is built.
+///
 /// Camera choice: KSP normally renders flight with two cameras: "Camera 01"
 /// (far, terrain) then "Camera 00" (near, vessel; clears depth). Scatterer's
 /// unified-camera mode disables Camera 01 and lets Camera 00 cover the whole
@@ -90,7 +105,26 @@ public class AuroraRenderer : MonoBehaviour
     public bool  sceneDepthOcclusion = true;
     [Tooltip("1.1.0: a sphere that hides this aurora: the body the vessel is at, when this is another body's aurora drawn on the flight camera. Null = none.")]
     public Transform occluder;
+    [Tooltip("1.1.0: the occluder as a body. Its orbital position (CelestialBody.position) places the sphere and the model, not its transform: KSP does not keep a body's local transform on its orbit while the body's terrain is unloaded.")]
+    public CelestialBody occluderBody;
+    [Tooltip("1.1.0: the aurora's own body, for the same reason: its orbital position is the planet centre.")]
+    public CelestialBody planetBody;
+    /// <summary>Where the sphere and the model were placed this frame, world (local-space) coordinates.</summary>
+    public Vector3 OccluderCentre { get; private set; }
     public float     occluderRadius;
+    public float     occluderShellInner, occluderShellOuter;   // the occluder body's terrain shell, for the depth test (1.1.0)
+    [Tooltip("1.1.0: the occluder body's scaled-space model, drawn into a depth buffer of its own while KSP shows that model instead of the terrain. Null = none.")]
+    public Mesh      occluderMesh;
+    [Tooltip("Rotation and scale of that model in metres (the position is added every frame from the occluder body's orbital position).")]
+    public Matrix4x4 occluderMeshRS = Matrix4x4.identity;
+    [Tooltip("Draw the model this frame (the instance sets it while the body's terrain is off).")]
+    public bool      occluderMeshOn;
+    [Tooltip("1.1.0: the occluder body's terrain height map (AuroraTerrainMap). Set, the model is a unit sphere the pass pushes out by the map; null, the model is drawn as it is.")]
+    public Texture2D occluderHeightMap;
+    [Tooltip("The occluder body's datum radius in metres, for the height map's sphere.")]
+    public float     occluderDatum;
+    /// <summary>The model depth was drawn and handed to the march this frame.</summary>
+    public bool      OccluderDepthActive { get; private set; }
     [Tooltip("1.1.0: every sample goes to the far target, i.e. behind this world's clouds everywhere (another body's aurora).")]
     public bool  forceFar = false;
 
@@ -113,6 +147,8 @@ public class AuroraRenderer : MonoBehaviour
     Camera        farCam;
     RenderTexture rt, rtFar, rtAux;
     RenderTargetIdentifier[] auroraTargets;     // { rt, rtFar, rtAux }: the aurora pass renders near / far of the cloud shell + its mean distance
+    RenderTexture occluderDepth;                // 1.1.0: the occluder body's model, eye depth in metres (see the header)
+    const int     OccluderDepthPass = 5;        // AuroraBlit.shader pass that draws it
     // 1.1.0: the temporal history (two sets, ping-pong)
     readonly RenderTexture[] histNear = new RenderTexture[2], histFar = new RenderTexture[2];
     readonly RenderTargetIdentifier[][] histTargets = new RenderTargetIdentifier[2][];
@@ -135,6 +171,8 @@ public class AuroraRenderer : MonoBehaviour
     readonly System.Diagnostics.Stopwatch preCullWatch = new System.Diagnostics.Stopwatch();
     /// <summary>Main-thread milliseconds of the last per-frame command-buffer rebuild.</summary>
     public float LastPreCullMs { get; private set; }
+    /// <summary>The camera this renderer draws on, once found (null before that).</summary>
+    public Camera TargetCamera => farCam;
     string        cameraMode = "";
 
     // Sub-pixel offsets for the temporal accumulation: the first eight points of the
@@ -395,6 +433,22 @@ public class AuroraRenderer : MonoBehaviour
 
     bool TemporalActive => temporal && !directMode && histNear[0] != null && histNear[1] != null;
 
+    /// <summary>1.1.0: the occluder model's depth buffer, at half the camera's size and never
+    /// smaller than the render buffers (point sampled by raster position: see the header).</summary>
+    bool EnsureOccluderDepth(Camera cam)
+    {
+        if (rt == null) return false;
+        int w = Mathf.Max(8, Mathf.Max(rt.width,  cam.pixelWidth  / 2));
+        int h = Mathf.Max(8, Mathf.Max(rt.height, cam.pixelHeight / 2));
+        if (occluderDepth != null && occluderDepth.width == w && occluderDepth.height == h) return true;
+        Drop(ref occluderDepth);
+        occluderDepth = MakeRT("RVA_occluder_depth", w, h, 0, RenderTextureFormat.RFloat, FilterMode.Point);
+        occluderDepthAllocs++;
+        if (occluderDepth != null) Log($"occluder model depth buffer {w}x{h} (allocation {occluderDepthAllocs}; camera {cam.pixelWidth}x{cam.pixelHeight}, aurora buffer {rt.width}x{rt.height})");
+        return occluderDepth != null;
+    }
+    int occluderDepthAllocs;
+
     // ---------------------------------------------------------- attachment
     /// <summary>(Re)attach both buffers in canonical order, so that at a shared
     /// event they run: render, then composite.</summary>
@@ -452,16 +506,26 @@ public class AuroraRenderer : MonoBehaviour
         }
 
         // Planet centre as late as possible (after any floating-origin shift
-        // this frame) so the ray-sphere math never sees a stale centre.
-        Vector3 centre = transform.parent != null ? transform.parent.position : Vector3.zero;
-        if (transform.parent != null)
+        // this frame) so the ray-sphere math never sees a stale centre. The body's
+        // orbital position when the body is known (1.1.0): the local transform a
+        // renderer is parented to is not kept on the orbit while that body's terrain
+        // is unloaded, and the aurora would drift off the planet it belongs to.
+        Vector3 centre = planetBody != null ? (Vector3)planetBody.position
+                       : transform.parent != null ? transform.parent.position : Vector3.zero;
+        if (planetBody != null || transform.parent != null)
             auroraMaterial.SetVector("_PlanetCenter", new Vector4(centre.x, centre.y, centre.z, 0f));
 
-        // Occluder sphere (1.1.0), relative to the planet centre like the shader's ray origin
-        if (occluder != null && occluderRadius > 0f)
+        // Occluder sphere (1.1.0), relative to the planet centre like the shader's ray origin.
+        // Its centre is the body's orbital position for the same reason: anchored on the
+        // transform, the sphere and the model drifted away from the body you see once its
+        // terrain switched off, at the vessel's orbital speed, until the terrain came back.
+        Vector3 occPos = occluderBody != null ? (Vector3)occluderBody.position : occluder != null ? occluder.position : Vector3.zero;
+        OccluderCentre = occPos;
+        if ((occluder != null || occluderBody != null) && occluderRadius > 0f)
         {
-            Vector3 o = occluder.position - centre;
+            Vector3 o = occPos - centre;
             auroraMaterial.SetVector("_Occluder", new Vector4(o.x, o.y, o.z, occluderRadius));
+            auroraMaterial.SetVector("_OccluderShell", new Vector4(occluderShellInner, occluderShellOuter, 0f, 0f));
         }
         else auroraMaterial.SetVector("_Occluder", Vector4.zero);
         auroraMaterial.SetFloat("_ForceFar", forceFar ? 1f : 0f);
@@ -501,6 +565,24 @@ public class AuroraRenderer : MonoBehaviour
         // this frame's sub-pixel ray tilt and sample-offset shift (globals: see the header)
         cbRender.SetGlobalVector("_RayJitter", new Vector4(jit.x * 2f * tanH / rt.width, jit.y * 2f * tanV / rt.height, 0f, 0f));
         cbRender.SetGlobalFloat("_TemporalOffset", tOff);
+
+        // 1.1.0: the occluder body's scaled-space model as a depth source while the camera sees
+        // past its terrain (see the header). Drawn first, with this camera's matrices, into its
+        // own buffer: 1 / eye depth, cleared to 0 (= nothing) and max-blended, so no depth buffer
+        // and none of its conventions are involved; each texel ends up with the nearest surface.
+        bool modelDepth = occluderMeshOn && occluderMesh != null && (occluder != null || occluderBody != null) && occluderRadius > 0f && EnsureOccluderDepth(cam);
+        if (modelDepth)
+        {
+            cbRender.SetRenderTarget(occluderDepth);
+            cbRender.ClearRenderTarget(false, true, Color.clear);
+            // the terrain map's sphere is pushed out by the map in the pass; KSP's own model is drawn as it is
+            blitMaterial.SetTexture("_OccluderHeightMap", occluderHeightMap);
+            blitMaterial.SetVector("_OccluderHeightParams", new Vector4(occluderDatum, occluderHeightMap != null ? 1f : 0f, 0f, 0f));
+            cbRender.DrawMesh(occluderMesh, Matrix4x4.Translate(occPos) * occluderMeshRS, blitMaterial, 0, OccluderDepthPass);
+            auroraMaterial.SetTexture("_OccluderDepth", occluderDepth);
+        }
+        auroraMaterial.SetVector("_OccluderDepthParams", new Vector4(1f / rt.width, 1f / rt.height, modelDepth ? 1f : 0f, 0f));
+        OccluderDepthActive = modelDepth;
 
         cbRender.SetRenderTarget(rtFar);
         cbRender.ClearRenderTarget(false, true, Color.clear);
@@ -711,17 +793,102 @@ public class AuroraRenderer : MonoBehaviour
         return null;
     }
 
+    // ---- depth readback (the dev window): what the depth texture holds at a screen point ----
+    RenderTexture probeRT;
+    Texture2D     modelTex;                     // 1x1 readback of the occluder model buffer, for the depth readout
+    Texture2D     probeTex;
+
+    /// <summary>Read the camera depth texture back at one screen point (pixels, bottom-left origin) and
+    /// at a 3 x 3 grid, and describe it: raw value, the linear distance both ways round, and where that
+    /// distance puts the point against the occluder sphere. Slow (a GPU readback); for the dev window.</summary>
+    public string DepthProbe(Vector2 screenPos)
+    {
+        if (farCam == null) return "depth probe: no camera yet";
+        Texture depth = Shader.GetGlobalTexture("_CameraDepthTexture");
+        if (depth == null) return "depth probe: no _CameraDepthTexture is bound";
+        int w = Mathf.Max(depth.width, 1), h = Mathf.Max(depth.height, 1);
+        if (probeRT == null || probeRT.width != w || probeRT.height != h)
+        {
+            if (probeRT != null) probeRT.Release();
+            probeRT = new RenderTexture(w, h, 0, RenderTextureFormat.RFloat);
+            probeRT.Create();
+        }
+        if (probeTex == null) probeTex = new Texture2D(w, h, TextureFormat.RFloat, false, true);
+        else if (probeTex.width != w || probeTex.height != h) probeTex.Resize(w, h);
+        Graphics.Blit(depth, probeRT);
+        RenderTexture prev = RenderTexture.active;
+        RenderTexture.active = probeRT;
+        probeTex.ReadPixels(new Rect(0, 0, w, h), 0, 0);
+        probeTex.Apply();
+        RenderTexture.active = prev;
+
+        bool  rev = SystemInfo.usesReversedZBuffer;
+        float n = farCam.nearClipPlane, f = farCam.farClipPlane;
+        var sb = new StringBuilder();
+        sb.Append($"depth texture {w}x{h} ({depth.graphicsFormat}) as bound in Update, which may be another camera's; camera '{farCam.name}' near {n:F2} far {f:F0}, reversed-Z {rev}, "
+                + $"depthTextureMode {farCam.depthTextureMode}, clear {farCam.clearFlags}, screen {Screen.width}x{Screen.height}");
+        Vector4 occ = auroraMaterial != null ? auroraMaterial.GetVector("_Occluder") : Vector4.zero;
+        Vector4 pc  = auroraMaterial != null ? auroraMaterial.GetVector("_PlanetCenter") : Vector4.zero;
+        sb.Append($"; occluder sphere {occ.w:F0} m");
+        // 1.1.0: the occluder model buffer under the mouse (1 / eye depth, 0 = nothing drawn). The
+        // buffer is read at the mouse's row counted from the bottom and from the top, so a flipped
+        // buffer shows up as the two disagreeing.
+        if (occluderDepth != null && OccluderDepthActive)
+        {
+            if (modelTex == null) modelTex = new Texture2D(1, 1, TextureFormat.RFloat, false, true);
+            int mx = Mathf.Clamp((int)(screenPos.x / Screen.width  * occluderDepth.width),  0, occluderDepth.width  - 1);
+            int my = Mathf.Clamp((int)(screenPos.y / Screen.height * occluderDepth.height), 0, occluderDepth.height - 1);
+            RenderTexture prev2 = RenderTexture.active;
+            RenderTexture.active = occluderDepth;
+            modelTex.ReadPixels(new Rect(mx, my, 1, 1), 0, 0); modelTex.Apply();
+            float a = modelTex.GetPixel(0, 0).r;
+            modelTex.ReadPixels(new Rect(mx, occluderDepth.height - 1 - my, 1, 1), 0, 0); modelTex.Apply();
+            float b = modelTex.GetPixel(0, 0).r;
+            RenderTexture.active = prev2;
+            sb.Append($"; model buffer {occluderDepth.width}x{occluderDepth.height} at the mouse: {(b > 0f ? (0.001f / b).ToString("F1") + " km" : "nothing")} (buffer row counted from the top, the one that lines up with the screen), {(a > 0f ? (0.001f / a).ToString("F1") + " km" : "nothing")} (counted from the bottom); aurora buffer {rt.width}x{rt.height}");
+        }
+        else sb.Append($"; model buffer: {(occluderMeshOn ? "wanted but not drawn" : "off")}");
+        ProbePoint(sb, "mouse", screenPos, w, h, rev, n, f, occ, pc);
+        for (int j = 0; j < 3; j++) for (int i = 0; i < 3; i++)
+            ProbePoint(sb, $"grid {i},{j}", new Vector2(Screen.width * (0.2f + 0.3f * i), Screen.height * (0.2f + 0.3f * j)), w, h, rev, n, f, occ, pc);
+        return sb.ToString();
+    }
+
+    void ProbePoint(StringBuilder sb, string label, Vector2 sp, int w, int h, bool rev, float n, float f, Vector4 occ, Vector4 pc)
+    {
+        int px = Mathf.Clamp((int)(sp.x / Screen.width * w), 0, w - 1), py = Mathf.Clamp((int)(sp.y / Screen.height * h), 0, h - 1);
+        float raw = probeTex.GetPixel(px, py).r;
+        // Unity's LinearEyeDepth, both ways round: lin = 1 / (zbp.z * raw + zbp.w)
+        float linRev = 1f / ((-1f + f / n) / f * raw + 1f / f);
+        float linStd = 1f / ((1f - f / n) / f * raw + (f / n) / f);
+        float lin = rev ? linRev : linStd;
+        Ray ray = farCam.ScreenPointToRay(new Vector3(sp.x, sp.y, 0f));
+        float t = lin / Mathf.Max(Vector3.Dot(ray.direction, farCam.transform.forward), 0.05f);
+        Vector3 pRel = (farCam.transform.position - new Vector3(pc.x, pc.y, pc.z)) + ray.direction * t;   // planet-relative, like the shader's ro + rd * t
+        string shell = "";
+        if (occ.w > 0f)
+        {
+            float rS = (pRel - new Vector3(occ.x, occ.y, occ.z)).magnitude;
+            shell = $", {rS / 1000f:F1} km from the occluder's centre ({rS / occ.w:F3} x sphere): {(rS < occ.w * 1.02f && rS > occ.w * 0.85f ? "GROUND" : "sky")}";
+        }
+        sb.Append($"\n  {label} ({px},{py}): raw {raw:G6}, linear {lin:F0} m (the other convention {(rev ? linStd : linRev):F0} m){(lin < f * 0.98f ? "" : " = far plane")}{(lin < 100f ? " NEAR" : "")}{shell}");
+    }
+
     void Teardown()
     {
+        if (probeRT != null) { probeRT.Release(); probeRT = null; }
+        if (probeTex != null) { Destroy(probeTex); probeTex = null; }
+        if (modelTex != null) { Destroy(modelTex); modelTex = null; }
         Camera.onPreCull -= OnAnyCameraPreCull;
         Detach();
         if (cbRender != null)     { cbRender.Release();  cbRender = null; }
         if (cbBlit != null)       { cbBlit.Release();    cbBlit = null; }
         if (directSphere != null) { Destroy(directSphere); directSphere = null; }
         if (blitMaterial != null) { Destroy(blitMaterial); blitMaterial = null; }
-        Drop(ref rt); Drop(ref rtFar); Drop(ref rtAux);
+        Drop(ref rt); Drop(ref rtFar); Drop(ref rtAux); Drop(ref occluderDepth);
         DropHistory();
         auroraTargets = null;
+        OccluderDepthActive = false;
         directMode = false;
         prevVPValid = curVPValid = false;
     }

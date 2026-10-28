@@ -123,6 +123,11 @@ Shader "RVA/AuroraBlit"
         // without the threshold the light tints the clear sky, with it only
         // real cloud is lit (0..threshold -> 0, threshold..1 -> 0..1)
         _CloudMinOpacity ("Min cloud opacity lit", Range(0, 0.9)) = 0.15
+        // 1.1.0, pass 5: the occluder body's terrain height map (metres above the datum, u =
+        // longitude, v = latitude) and x = the datum radius in metres, y = 1 while the map is in
+        // use (the mesh is then a unit sphere the pass pushes out), 0 to draw the mesh as it is
+        _OccluderHeightMap    ("Occluder terrain height map (set by C#)", 2D) = "black" {}
+        _OccluderHeightParams ("Occluder datum radius, map on (set by C#)", Vector) = (0, 0, 0, 0)
     }
 
     SubShader
@@ -562,6 +567,56 @@ Shader "RVA/AuroraBlit"
             #pragma vertex   vertTri
             #pragma fragment fragResolve
             #pragma target   4.0
+            ENDCG
+        }
+
+        // 5: OCCLUDER DEPTH (1.1.0). AuroraRenderer draws the body the vessel is at into a
+        //    buffer of its own with the camera's own matrices, while the camera sees past the
+        //    terrain KSP has loaded (zoomed far out, or above the body's PQS limit). The mesh is
+        //    a unit sphere that this pass pushes out by the body's terrain height map (built by
+        //    the plugin from the height function, which never switches off), so the silhouette
+        //    carries the real highlands; with no map yet it is KSP's own smooth scaled-space
+        //    model, drawn as it is. Writes 1 / the eye depth in metres (0 = nothing drawn); the
+        //    march reads it where the scene depth is clear. No depth buffer is involved: the
+        //    target is cleared to 0 and the pass blends with Max, both faces, so each texel ends
+        //    up holding the nearest surface whatever the platform's depth conventions. The clip
+        //    z is held inside the far plane: the limb can lie beyond it (a high Mun orbit), and
+        //    the depth written comes from the view position anyway.
+        Pass
+        {
+            BlendOp Max
+            Blend One One
+            ZTest Always
+            ZWrite Off
+            Cull Off
+            CGPROGRAM
+            #pragma vertex   vertDepth
+            #pragma fragment fragDepth
+            #pragma target   3.0
+            sampler2D _OccluderHeightMap;
+            float4    _OccluderHeightParams;
+            struct adDepth  { float4 vertex : POSITION; float2 uv : TEXCOORD0; };
+            struct v2fDepth { float4 pos : SV_POSITION; float eye : TEXCOORD0; };
+            v2fDepth vertDepth (adDepth v)
+            {
+                v2fDepth o;
+                float3 p = v.vertex.xyz;
+                if (_OccluderHeightParams.y > 0.5)
+                {
+                    // the unit sphere's vertex, out to the datum plus the map's height there
+                    float h = tex2Dlod(_OccluderHeightMap, float4(v.uv, 0.0, 0.0)).r;
+                    p = normalize(p) * (_OccluderHeightParams.x + h);
+                }
+                o.pos = UnityObjectToClipPos(float4(p, 1.0));
+                #if defined(UNITY_REVERSED_Z)
+                o.pos.z = max(o.pos.z, 0.0);              // the far plane is z = 0 here
+                #else
+                o.pos.z = min(o.pos.z, o.pos.w);          // and z = w here
+                #endif
+                o.eye = -UnityObjectToViewPos(p).z;
+                return o;
+            }
+            float4 fragDepth (v2fDepth i) : SV_Target { return float4(1.0 / max(i.eye, 1.0), 0.0, 0.0, 1.0); }
             ENDCG
         }
     }

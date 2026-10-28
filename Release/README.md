@@ -1,4 +1,4 @@
-# Realistic Volumetric Aurorae (RVA) v1.1.0
+# Realistic Volumetric Aurorae (RVA) v1.1.1
 
 Volumetric polar aurorae for Kerbin, Jool and Laythe, for Kerbal Space Program 1.12.x.
 
@@ -30,6 +30,7 @@ GameData/RealisticVolumetricAurorae/
   Plugins/RealisticVolumetricAurorae.dll                the plugin
   PluginData/settings.cfg                               your settings. Created on first launch, never touched by updates
   PluginData/settings-defaults.cfg                      reference copy of the shipped values (with comments), not read by the mod
+  PluginData/terrain/                                   terrain height maps of the stock bodies (1 MB each); others build on first visit
   Config/Kerbin.cfg, Jool.cfg, Laythe.cfg               which bodies get an aurora and each one's preset (RVA_AURORA nodes)
   Compatibility/RVA_SPVE_remove_kerbin_aurora.cfg       optional, needs ModuleManager and SPVE
   Compatibility/RVA_SPVE_remove_jool_laythe_aurora.cfg  optional, needs ModuleManager and SPVE
@@ -58,7 +59,15 @@ that body off.
 Other bodies' aurorae are drawn too: in the map view, in the tracking station, and
 from a vessel when the body is close enough to matter (Jool from Laythe, Laythe from
 Jool orbit). A body that fills only part of the view renders at a higher scale, up to
-1.0, for the same pixel budget.
+1.0, for the same pixel budget. The body you are at hides them, mountains included, at
+any altitude: where KSP has its terrain loaded, by that terrain; where it has not (the
+camera zoomed far out above the vessel, or high enough that KSP shows the body's smooth
+distant model), by a model of the body the plugin builds from the terrain's own height
+function. The maps for the stock bodies ship in `PluginData/terrain/`; a body without one
+(a planet pack's) is sampled once over about twenty seconds the first time you are there
+with another body's aurora in view (KSP.log says `[RVA:Terrain]`), and KSP's smooth model
+stands in until then. A shipped map is checked against the terrain in your game and
+rebuilt if a planet pack has changed that body. Deleting a map rebuilds it too.
 
 With SPVE and ModuleManager installed, the two `RVA_SPVE_remove_*` patches take
 SPVE's own aurora layers off Kerbin, Jool and Laythe so the two mods do not overlap.
@@ -94,7 +103,7 @@ slots.
 ## If something looks wrong
 
 The window's status line (Alt+F8) shows the shader build. It has to read
-`shader build 1110`. A line in capitals about a mismatch means the plugin DLL and the
+`shader build 1116`. A line in capitals about a mismatch means the plugin DLL and the
 shader bundle in your install come from different versions. Reinstall the release zip
 so both are replaced. KSP.log carries the same message under `[RVA]`.
 

@@ -33,5 +33,5 @@ Licence: CC BY-NC-SA 4.0, (c) 2026 HereComesTheBoom. Source: https://github.com/
 - Game: Kerbal Space Program. KSP version: 1.12.5
 - Licence dropdown: **CC BY-NC-SA 4.0** (CKAN reads the licence from here, so it must match LICENSE.txt)
 - Source code: the GitHub repository
-- Version: 1.1.0. Changelog: paste `Release/ReleaseNotes-1.1.0.md` (the same text as the GitHub release)
+- Version: 1.1.1. Changelog: paste `Release/ReleaseNotes-1.1.1.md` (the same text as the GitHub release)
 - Tick **Add to CKAN** (mod page, Edit) after the first upload. SpaceDock's bot opens the NetKAN pull request for you.

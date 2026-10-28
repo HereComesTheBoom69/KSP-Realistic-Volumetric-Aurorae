@@ -1,10 +1,10 @@
 <!-- Thread title (Add-on Releases):
-[1.12.x] Realistic Volumetric Aurorae (RVA) v1.1.0 - volumetric aurorae for Kerbin, Jool and Laythe
+[1.12.x] Realistic Volumetric Aurorae (RVA) v1.1.1 - volumetric aurorae for Kerbin, Jool and Laythe
 Paste the body below into the forum editor. Headings become bold lines, keep the lists.
 Fill in any link still marked <...> and attach 3 or 4 screenshots (night-side orbit, ground
 view under the curtains, map view). -->
 
-**Realistic Volumetric Aurorae (RVA)** v1.1.0 for KSP 1.12.x
+**Realistic Volumetric Aurorae (RVA)** v1.1.1 for KSP 1.12.x
 
 Volumetric polar aurorae for Kerbin, Jool and Laythe. Not a texture: a raymarched glow layer drawn around the planet every frame. Thin, folding ribbons that curl back on themselves, vertical rays tapering to tips, green at the base and red at the top, three arcs forming the auroral oval. It is quiet most of the time. Then a storm comes, the oval widens, slides toward the equator and the outer arcs fade in, and it settles down again. From the ground the curtains fill the sky. From orbit the oval sits on the night side and follows the terminator.
 

@@ -57,6 +57,17 @@ Copy-Item $Dll    (Join-Path $dst "Plugins\RealisticVolumetricAurorae.dll")
 Copy-Item (Join-Path $src "Compatibility\*.cfg") (Join-Path $dst "Compatibility\")
 Copy-Item (Join-Path $src "Config\*.cfg")        (Join-Path $dst "Config\")           # per-body presets (RVA_AURORA), 1.1.0
 Copy-Item (Join-Path $src "RealisticVolumetricAurorae.version") $dst
+# 1.1.0: terrain height maps of the stock bodies (PluginData/terrain/<body>.rvaterrain), built in play and
+# copied into the kit so users do not build them; a kit without them still packages (they build on first visit)
+$terrain = Join-Path $src "PluginData\terrain"
+if (Test-Path $terrain) {
+    $maps = Get-ChildItem $terrain -Filter "*.rvaterrain"
+    if ($maps.Count -gt 0) {
+        New-Item -ItemType Directory -Path (Join-Path $dst "PluginData\terrain") -Force | Out-Null
+        Copy-Item (Join-Path $terrain "*.rvaterrain") (Join-Path $dst "PluginData\terrain\")
+        Write-Host ("Terrain maps: " + (($maps | ForEach-Object { $_.BaseName }) -join ", "))
+    }
+} else { Write-Warning "No PluginData\terrain folder in the kit: the release ships no terrain maps (they are built on first visit, see RELEASE_GUIDE 0.4d)" }
 # the licence ships inside the mod folder (forum rules, CKAN); the kit root's copy is the same text,
 # so a kit folder without the GameData copy is fine
 $lic = Join-Path $src "LICENSE.txt"
