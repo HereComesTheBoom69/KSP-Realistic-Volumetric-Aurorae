@@ -155,7 +155,8 @@ The forum rules require plugin source to be available, KSP-AVC wants a URL for t
 3. Mod page, *Edit*: source code link = the GitHub repo; a background image and a few
    screenshots (the night-side orbit shots and one from the ground).
 4. Mod page, *Edit*, tick **"Add to CKAN"** (SpaceDock calls it enabling CKAN).
-   SpaceDock's bot then opens the NetKAN pull request by itself, usually within a day.
+   SpaceDock's bot then opens the NetKAN pull request by itself, usually within a day
+   (done: PR 11697, see section 3).
 
 For each later version: *Upload a new version* on SpaceDock with the new zip and
 changelog. CKAN indexes it automatically a few hours later, and the forum thread gets a
@@ -163,19 +164,35 @@ post.
 
 ## 3. CKAN, mostly waiting
 
-- After the SpaceDock checkbox, watch https://github.com/KSP-CKAN/NetKAN/pulls for a PR
-  named `RealisticVolumetricAurorae`. A volunteer reviews it (they check the zip layout,
-  the licence and the KSP versions) and may ask questions in the PR. Answer there. Once
-  it is merged the mod shows up in CKAN clients within a few hours.
-- If you would rather not wait for the bot, or want the relationships set from the
-  start: fork `KSP-CKAN/NetKAN`, add `NetKAN/RealisticVolumetricAurorae.netkan` (the
-  draft is next to this file; fill in the SpaceDock mod id, which is the number in the
-  SpaceDock URL, the forum URL and the repository URL) and open the PR. The `supports`
-  entries tell CKAN the mod works with EVE and ModuleManager without requiring them. The
-  `install` stanza is the default CKAN would infer anyway.
-- CKAN takes the version from the `.version` file in the zip (`$vref`), so the `.version`
-  file and the csproj `<Version>` must be bumped together on every release. The packager
-  warns when they disagree.
+- The SpaceDock checkbox did its job: netkan-bot opened
+  https://github.com/KSP-CKAN/NetKAN/pull/11697 on 2026-10-14 (label "Mod request"). The
+  request lives on its own branch of that repository until it is merged, so it does not
+  show up in the `NetKAN/` folder before then; look at the pull requests, not the files.
+- How the volunteers work: bot requests are merged in sweeps every week or two, and a
+  sweep takes the ones that need no decision. A request with an open question from the
+  author waits for the maintainer who edits metadata by hand, and that queue was about
+  140 open PRs at the end of October 2026. Ours has such a question (ModuleManager and EVE
+  as `supports` instead of `depends`, plus the `graphics` tag), which is why the sweeps of
+  2026-10-17 and 2026-10-28 merged requests filed after it and left it alone.
+- The way out is to hand them a one-click merge: open a PR of your own with the finished
+  file next to this guide, `RealisticVolumetricAurorae.netkan`. Fork `KSP-CKAN/NetKAN` on
+  GitHub, open its `NetKAN` folder, *Add file* > *Create new file*, name it
+  `RealisticVolumetricAurorae.netkan`, paste the file, commit, then *Contribute* > *Open
+  pull request*. Title `Add RealisticVolumetricAurorae`; body: the author's version of
+  #11697 with the changes asked for there, either PR can be closed. Leave one comment on
+  #11697 pointing at the new PR. No need to mention anyone by name; the maintainers are
+  notified of every comment. The file keeps the shape the bot proposed (GitHub release
+  first, SpaceDock as the fallback) and adds the licence, the tags, the `supports`
+  entries, the links and the install stanza, so there is nothing left to decide.
+- What the file relies on: every GitHub release has the one zip attached and a tag
+  `v<version>` (the version edit strips the `v`); the SpaceDock version is the same
+  number; the `.version` file in the zip gives CKAN the KSP versions (`$vref`), so
+  `.version` and the csproj `<Version>` are bumped together on every release (the
+  packager warns when they disagree). The licence is written into the file because
+  GitHub's licence detection does not know the non-commercial Creative Commons licences.
+- Once merged, every later release is picked up on its own: publish the GitHub release
+  and upload to SpaceDock, nothing to file. Metadata changes later (a tag, a conflict, a
+  new dependency) are another small PR against the same file.
 
 ## 4. Forum thread, about 20 min
 
