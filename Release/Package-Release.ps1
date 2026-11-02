@@ -1,27 +1,4 @@
-﻿<#
-  Realistic Volumetric Aurorae (RVA) - release packager.
-  Builds RealisticVolumetricAurorae-<version>.zip for SpaceDock / CKAN / GitHub releases
-  from your Release-configuration DLL and the built shader bundle.
-
-  Usage (PowerShell), either:
-    .\Release\Package-Release.ps1 -Bundle "C:\...\AssetBundles\rva_shaders" -Dll "C:\...\Plugin\bin\Release\RealisticVolumetricAurorae.dll"
-  or take both from your KSP install:
-    .\Release\Package-Release.ps1 -FromGameData "C:\Program Files (x86)\Steam\steamapps\common\Kerbal Space Program\GameData"
-  Optional: -OutDir <folder>   (default: the kit root)
-
-  The zip contains exactly what CKAN should install:
-    GameData/RealisticVolumetricAurorae/
-      Bundles/rva_shaders
-      Plugins/RealisticVolumetricAurorae.dll
-      PluginData/settings-defaults.cfg     <- REFERENCE copy. settings.cfg itself is NOT shipped:
-                                              CKAN overwrites every installed file on upgrade and
-                                              settings.cfg belongs to the user. The plugin's built-in
-                                              defaults are the same values; Alt+F8 -> Save creates it.
-      Compatibility/RVA_SPVE_*.cfg
-      RealisticVolumetricAurorae.version
-      LICENSE.txt
-      README.md                            <- the user-facing readme (Release/README.md)
-#>
+﻿
 param(
     [string]$Bundle,
     [string]$Dll,
@@ -55,10 +32,9 @@ foreach ($d in "Bundles", "Plugins", "PluginData", "Compatibility", "Config") { 
 Copy-Item $Bundle (Join-Path $dst "Bundles\rva_shaders")
 Copy-Item $Dll    (Join-Path $dst "Plugins\RealisticVolumetricAurorae.dll")
 Copy-Item (Join-Path $src "Compatibility\*.cfg") (Join-Path $dst "Compatibility\")
-Copy-Item (Join-Path $src "Config\*.cfg")        (Join-Path $dst "Config\")           # per-body presets (RVA_AURORA), 1.1.0
+Copy-Item (Join-Path $src "Config\*.cfg")        (Join-Path $dst "Config\")
 Copy-Item (Join-Path $src "RealisticVolumetricAurorae.version") $dst
-# 1.1.0: terrain height maps of the stock bodies (PluginData/terrain/<body>.rvaterrain), built in play and
-# copied into the kit so users do not build them; a kit without them still packages (they build on first visit)
+
 $terrain = Join-Path $src "PluginData\terrain"
 if (Test-Path $terrain) {
     $maps = Get-ChildItem $terrain -Filter "*.rvaterrain"
@@ -67,27 +43,24 @@ if (Test-Path $terrain) {
         Copy-Item (Join-Path $terrain "*.rvaterrain") (Join-Path $dst "PluginData\terrain\")
         Write-Host ("Terrain maps: " + (($maps | ForEach-Object { $_.BaseName }) -join ", "))
     }
-} else { Write-Warning "No PluginData\terrain folder in the kit: the release ships no terrain maps (they are built on first visit, see RELEASE_GUIDE 0.4d)" }
-# the licence ships inside the mod folder (forum rules, CKAN); the kit root's copy is the same text,
-# so a kit folder without the GameData copy is fine
+} else { Write-Warning "No PluginData\terrain folder in the kit, shipping no terrain maps (see RELEASE_GUIDE)" }
+
 $lic = Join-Path $src "LICENSE.txt"
 if (-not (Test-Path $lic)) { $lic = Join-Path $kit "LICENSE.txt" }
 if (-not (Test-Path $lic)) { throw "LICENSE.txt not found in '$src' or '$kit' - it must ship in the zip" }
 Copy-Item $lic (Join-Path $dst "LICENSE.txt")
-Copy-Item (Join-Path $PSScriptRoot "README.md") (Join-Path $dst "README.md")     # the user-facing readme
+Copy-Item (Join-Path $PSScriptRoot "README.md") (Join-Path $dst "README.md")
 
 $ref = Get-Content (Join-Path $src "PluginData\settings.cfg") -Raw
-$ref = "// REFERENCE COPY - not read by the mod. The built-in defaults are these same values.`r`n" +
-       "// To customise: use the in-game window (Alt+F8, 'Save to settings.cfg'), which creates settings.cfg`r`n" +
-       "// next to this file, or copy this file to settings.cfg and edit it. settings.cfg is never`r`n" +
-       "// overwritten by an update; this reference copy is.`r`n" + $ref
+$ref = "// reference copy of the shipped values, not read by the mod. edit settings.cfg instead`r`n" +
+       "// (Alt+F8 > Save creates it, updates never touch it. this file gets overwritten)`r`n" + $ref
 Set-Content -Path (Join-Path $dst "PluginData\settings-defaults.cfg") -Value $ref -NoNewline -Encoding UTF8
 
 $zip = Join-Path $OutDir "RealisticVolumetricAurorae-$version.zip"
 if (Test-Path $zip) { Remove-Item $zip -Force }
 $tar = Get-Command tar.exe -ErrorAction SilentlyContinue
 if ($tar) {
-    # Windows 10+ bsdtar writes standard zips with forward-slash entry names
+
     & $tar.Source -a -c -f $zip -C $stage GameData
 } else {
     Compress-Archive -Path (Join-Path $stage "GameData") -DestinationPath $zip
@@ -101,16 +74,15 @@ try {
     $entries = @($z.Entries | ForEach-Object { $_.FullName.Replace('\', '/') })
     $z.Entries | Where-Object { $_.Length -gt 0 } | ForEach-Object { Write-Host ("  {0,10}  {1}" -f $_.Length, $_.FullName) }
 
-    # Layout check (1.0.1): the 1.0.0 zip shipped the bundle and the DLL one folder too deep
-    # (Bundles/rva_shaders/rva_shaders, Plugins/RealisticVolumetricAurorae.dll/...). KSP finds a
-    # nested DLL anyway, so the game looked healthy while the plugin could not find its bundle.
     $must = @("GameData/RealisticVolumetricAurorae/Bundles/rva_shaders",
               "GameData/RealisticVolumetricAurorae/Plugins/RealisticVolumetricAurorae.dll",
               "GameData/RealisticVolumetricAurorae/RealisticVolumetricAurorae.version",
               "GameData/RealisticVolumetricAurorae/LICENSE.txt",
               "GameData/RealisticVolumetricAurorae/Config/Kerbin.cfg",
               "GameData/RealisticVolumetricAurorae/Config/Jool.cfg",
-              "GameData/RealisticVolumetricAurorae/Config/Laythe.cfg")
+              "GameData/RealisticVolumetricAurorae/Config/Laythe.cfg",
+              "GameData/RealisticVolumetricAurorae/Config/Duna.cfg",
+              "GameData/RealisticVolumetricAurorae/Config/Eve.cfg")
     foreach ($m in $must) {
         $e = $z.Entries | Where-Object { $_.FullName.Replace('\', '/') -eq $m }
         if (-not $e)            { throw "ZIP LAYOUT ERROR: missing entry '$m'" }
@@ -121,6 +93,6 @@ try {
     if ($entries -contains "GameData/RealisticVolumetricAurorae/PluginData/settings.cfg") { throw "ZIP LAYOUT ERROR: settings.cfg must not ship (CKAN would overwrite users' settings on upgrade)" }
     Write-Host "`nLayout check passed: bundle, DLL, .version and LICENSE are directly where the plugin expects them."
 }
-catch   { $z.Dispose(); Remove-Item $zip -Force -ErrorAction SilentlyContinue; throw }   # never leave a bad zip behind to upload by accident
+catch   { $z.Dispose(); Remove-Item $zip -Force -ErrorAction SilentlyContinue; throw }
 finally { $z.Dispose() }
 Write-Host "`nNext: Release\RELEASE_GUIDE.md"

@@ -1,223 +1,162 @@
-# Releasing Realistic Volumetric Aurorae: GitHub, SpaceDock, CKAN, forum
+# Release checklist (github, spacedock, ckan, forum)
 
-The order matters a little. GitHub first, because it gives you the source link and the
-version file URL the others want. Then SpaceDock, which gives you the download link and
-files the CKAN request for you. Then the forum thread, which links to both. CKAN happens
-on its own after SpaceDock.
+Order: GitHub first (gives the source link and the .version url the others want), then
+SpaceDock (download link, and it files the CKAN request itself), then the forum post that
+links both. CKAN happens on its own after SpaceDock.
 
-## 0. Build and check the release
+## 0. Build + check
 
-1. Build the shader bundle: `Aurora_Shader.shader` and `AuroraBlit.shader` in Unity,
-   menu **RVA > Build Shader Bundle**, output `AssetBundles/rva_shaders`.
-2. Build the plugin: Visual Studio, configuration **Release**, output
-   `Plugin/bin/Release/RealisticVolumetricAurorae.dll`. Not the Dev build. The release
-   DLL hides the dev-only settings.
-3. Install both into `GameData/RealisticVolumetricAurorae/` in KSP, start a flight and
-   check KSP.log for `[RVA] Realistic Volumetric Aurorae (RVA) v<version> (release build)`
-   and the renderer line. Open Alt+F8 and confirm the title shows the version without
-   "(dev build)".
-4. Package. In PowerShell, from the kit folder:
+1. Shader bundle: Unity, RVA > Build Shader Bundle, output AssetBundles/rva_shaders.
+2. Plugin: VS, **Release** config, Plugin/bin/Release/RealisticVolumetricAurorae.dll. NOT
+   the dev build, the release dll hides the dev only settings.
+3. Install both into GameData/RealisticVolumetricAurorae, start a flight, check KSP.log for
+   `[RVA] Realistic Volumetric Aurorae (RVA) v<version> (release build)` and the renderer
+   line. Alt+F8, the title shouldnt say (dev build).
+4. Package. PowerShell from the kit folder:
 
        .\Release\Package-Release.ps1 -FromGameData "C:\...\Kerbal Space Program\GameData"
 
-   This writes `RealisticVolumetricAurorae-<version>.zip`. It lists what it packed and,
-   since 1.0.1, **fails loudly if the layout is wrong**. The bundle must be the file
-   `GameData/RealisticVolumetricAurorae/Bundles/rva_shaders` and the DLL the file
-   `.../Plugins/RealisticVolumetricAurorae.dll`, directly inside those folders and never
-   inside a folder of the same name. The 1.0.0 zip was built by hand with
-   `Bundles/rva_shaders/rva_shaders` and
-   `Plugins/RealisticVolumetricAurorae.dll/RealisticVolumetricAurorae.dll`. KSP still
-   loaded the nested DLL, so the game looked fine while the plugin could not find its
-   bundle, and nobody who downloaded it saw an aurora. Use the script. If you have to zip
-   by hand, mirror this exactly:
+   Writes RealisticVolumetricAurorae-<version>.zip, lists what it packed and fails loudly
+   if the layout is wrong. The bundle must be the FILE
+   GameData/RealisticVolumetricAurorae/Bundles/rva_shaders and the dll the file
+   .../Plugins/RealisticVolumetricAurorae.dll, directly in those folders, never inside a
+   folder of the same name. 1.0.0 was zipped by hand with Bundles/rva_shaders/rva_shaders
+   and nobody who downloaded it saw an aurora. Use the script. If you really have to zip
+   by hand:
 
-       GameData/RealisticVolumetricAurorae/Bundles/rva_shaders            (a file, no extension)
+       GameData/RealisticVolumetricAurorae/Bundles/rva_shaders            (file, no extension)
        GameData/RealisticVolumetricAurorae/Plugins/RealisticVolumetricAurorae.dll
-       GameData/RealisticVolumetricAurorae/Config/*.cfg                  (the per-body presets, 1.1.0)
+       GameData/RealisticVolumetricAurorae/Config/*.cfg
 
-4a. **1.1.1 checks.** The Mun at 15 km with Kerbin on the horizon: its aurora is cut at
-   the ridges on the limb, with the camera close to the vessel and zoomed all the way out,
-   and stays cut as the orbit runs (the status line says "on its model (... terrain map)"
-   once zoomed out). KSP.log on start: `[RVA:Terrain] Mun: terrain map 1024x512 ready
-   (from PluginData/terrain)`, not "building", for the seven shipped bodies. No fade of
-   Kerbin's aurora with the camera angle at the Mun.
+5. DLL and bundle from the same source: after rebuilding either, start KSP and look for
+   `[RVA] Shader build 1131 matches the plugin` in KSP.log (status line in the window
+   shows it too). `SHADER BUILD ... DOES NOT MATCH PLUGIN` means one of them is stale,
+   rebuild it from the current kit before testing anything else.
+6. **Test the zip, not your working folder.** Move your own
+   GameData/RealisticVolumetricAurorae aside, extract the release zip into GameData, start
+   KSP, check the log for `Bundle loaded` and `Shaders ready`. Put your folder back after.
+   This is the step that wouldve caught 1.0.0.
 
-4b. **1.1.0 checks.** Jool orbit at 300 to 900 km (inside the band: no rings, no seam at
-   the band's lower horizon). The view of Jool's limb from Laythe's surface and from
-   Laythe orbit (its aurora hidden by Laythe's terrain and clouds, visible above the
-   horizon). Laythe's own aurora from its surface at about 52 degrees latitude and from
-   low orbit (green base, red top, nothing showing through the sea or the terrain, no
-   horizontal stripes across the far oval from an equatorial orbit). A Laythe storm from
-   the ground near the equator (window, Storm section, manual intensity 1: the arcs fan
-   out from the oval down to overhead, and draw back as you lower it). An eclipse: time
-   warp on Laythe's day side until Jool covers the sun. The log says "Laythe: in Jool's
-   shadow, daylight fade lifted" and the aurora comes up over the lit side, then goes
-   again when the sun returns. An SOI crossing from Laythe to Jool (the local aurora
-   rebuilds and the log says "Main body changed"). The map view zoomed to Jool and to
-   Kerbin, and the tracking station. With SPVE installed: no second, flat aurora on Jool
-   or Laythe (the removal patch found SPVE's layers; if one is still there, see the
-   patch's header). From Mun orbit with Kerbin just below the horizon: its aurora is cut off
-   at the Mun's terrain, not visible through the ground near the limb; the same from the
-   Mun's surface, and from a 15 km orbit with the camera zoomed all the way out, if your
-   camera zooms far, and from a high orbit (the plugin then tests against its own model of
-   the Mun: the body's status line in the window says "on its model (camera N km above the
-   vessel, terrain map)" or "(terrain off, terrain map)", and KSP.log gets a line when it
-   switches). On the first visit KSP.log shows `[RVA:Terrain] Mun: building a 1024x512
-   terrain map` and, some seconds later, `terrain map 1024x512 ready (built in N s)`; the
-   status says "smooth model, map N %" in between. The map lands in PluginData/terrain/,
-   which the packager does not ship.
+   Why settings-defaults.cfg and not settings.cfg: CKAN overwrites every file it installed
+   on upgrade and settings.cfg is the users. The release ships no settings.cfg, the plugin
+   runs on built in defaults (same values, log says `no settings file ... using defaults`)
+   and Alt+F8 Save creates the file, which upgrades then leave alone.
 
-   **Temporal accumulation** (window, Performance section, on by default): whip the
-   camera round the vessel and stop. There should be no aurora trailing behind the
-   motion and no smear at the vessel's edges. Let it settle: no grain, and the ribbons
-   sharper than with the toggle off at the same render scale. Time warp through a storm:
-   the arcs move without ghosting. Toggle it off and on: the picture rebuilds within a
-   second. Then the measurement: FPS with the toggle on and off at your render scale,
-   and with it on at half that scale.
+### Things to eyeball before a release
 
-   **Storms** (45 min of real time apart): the window's status line reads "quiet, next
-   storm in N min". N is up to about 45 the first time, never counts down during a pause,
-   and does not run faster at 4x physics warp. Revert the flight or visit the tracking
-   station and come back, and N carries on from where it was. The *Storm now* button
-   brings one on at once and the line then says "storm rising to ...", "at its peak ..."
-   and "fading ...". Drag the minutes slider down to 1 and the next storm is due within
-   the minute.
+Clouds (1.2.0): Kerbin orbit, zoom the camera out past the volumetric fade out (status line
+says the volumetrics buffer isnt read and the flat layers are occluding). No hard edged
+patches sliding around the far side of the oval, no spherical mask between the atmosphere
+and the limb, stars AND aurora visible through the gaps in the 2D clouds. Then zoom back in,
+volumetrics occlude per pixel again, and the far side of the oval doesnt show through the
+cloud band at the horizon (horizon boost slider, debug mode 10 shows the buffer). Eve same
+thing from orbit. Duna: zoom out past the texture switch, aurora stays cut at the limb and
+there is no fuzzy flickering patch where the far aurora meets the terrain, also under warp.
 
-4d. **Terrain maps (1.1.0).** The plugin hides another body's aurora behind the terrain of
-   the body you are at using a height map of that terrain, built once per body from the
-   terrain's height function (about 20 s at 2.5 ms a frame, with an FPS dip while it runs)
-   and kept in `GameData/RealisticVolumetricAurorae/PluginData/terrain/<body>.rvaterrain`
-   (1 MB each). A map is built only where another body's aurora is in view and the body
-   has terrain, so the stock bodies that get one are the Mun and Minmus (Kerbin's aurora)
-   and Laythe, Vall, Tylo, Bop and Pol (Jool's and Laythe's). Jool gets none: it has no
-   PQS, so there is nothing to map and its scaled-space model is exact as it is (KSP.log
-   says so). Build the seven before packaging so users never see the smooth stand-in:
-   with a dev or release build installed, use the cheat menu (Alt+F12, Cheats, Set Orbit)
-   to put a vessel in orbit around each of those bodies in turn, wait for
-   `[RVA:Terrain] <body>: terrain map 1024x512 ready` in KSP.log (the body's status line
-   in the window says "smooth model, map N %" until then), then copy the seven
-   `.rvaterrain` files from your install's `PluginData/terrain/` into the kit's
-   `GameData/RealisticVolumetricAurorae/PluginData/terrain/` and commit them. For a body
-   no aurora is in view from yet (Gilly and Ike, for the Eve and Duna aurorae to come),
-   the dev window has a button in the Diagnostics section, "Build the terrain map for
-   <body> now", which builds it regardless; ship those too.
-   The packager ships whatever that folder holds and warns if it is missing. A planet
-   pack's bodies build theirs on first visit. Your own mod list does not matter for the
-   build: the map samples the PQS height function, which Kopernicus leaves at stock
-   without a pack and Parallax does not touch; and each file carries the terrain's height
-   at 48 fixed points, so a user whose terrain differs there (a pack rewriting a stock
-   body) gets a fresh map built instead of a wrong one.
+Terrain (1.1.1): the Mun at 15 km with Kerbin on the horizon, aurora cut at the ridges on
+the limb with the camera close and zoomed all the way out, stays cut as the orbit runs.
+KSP.log on start: `[RVA:Terrain] Mun: terrain map 1024x512 ready (from PluginData/terrain)`
+not "building", for all the shipped bodies. No fade of Kerbins aurora with the camera angle.
 
-4c. **DLL and bundle from the same source.** After rebuilding either, start KSP and find
-   `[RVA] Shader build 1116 matches the plugin` in KSP.log (the window's status line
-   shows it too). A `SHADER BUILD ... DOES NOT MATCH PLUGIN` warning means one of the
-   two is stale. Rebuild it from the current kit before testing anything else.
-5. **Test the zip, not your working folder.** Move your own
-   `GameData/RealisticVolumetricAurorae` aside, extract the release zip into GameData,
-   start KSP, and check the log for `Bundle loaded` and `Shaders ready`. Put your folder
-   back afterwards. This is the step that would have caught 1.0.0.
+1.1.0 stuff: Jool orbit 300-900 km (inside the band, no rings, no seam at the lower
+horizon). Jool's limb from Laythe surface and orbit. Laythes own aurora from the surface at
+~52 deg and low orbit (nothing through the sea/terrain, no horizontal stripes across the
+far oval from an equatorial orbit). Laythe storm from the ground near the equator (manual
+intensity 1, arcs fan out down to overhead and back). Eclipse: warp on Laythes day side
+until Jool covers the sun, log says "in Jool's shadow, daylight fade lifted". SOI crossing
+Laythe -> Jool, log says "Main body changed". Map view on Jool and Kerbin, tracking station.
+With SPVE: no second flat aurora on any body.
 
-   Why `settings-defaults.cfg` and not `settings.cfg`: CKAN overwrites every file it
-   installed when it upgrades a mod, and `settings.cfg` is the user's. The release ships
-   no settings.cfg. The plugin uses its built-in defaults (the same values; the log says
-   `no settings file ... using defaults`) and Alt+F8 then *Save* creates the file, which
-   upgrades then leave alone.
+Temporal: whip the camera round the vessel and stop, no trailing aurora, no smear at the
+vessel edges, settles with no grain and sharper than with the toggle off. Warp through a
+storm, no ghosting. FPS with it on/off at your render scale, and on at half the scale.
 
-## 1. GitHub (source and releases), about 15 min
+Storms: status line "quiet, next storm in N min", N up to ~45 first time, doesnt count down
+while paused, doesnt run faster at 4x phys warp. Revert / tracking station and back, N
+carries on. Storm now brings one on, line goes "storm rising", "at its peak", "fading".
+Minutes slider down to 1, next storm within the minute.
 
-The forum rules require plugin source to be available, KSP-AVC wants a URL for the
-`.version` file, and CKAN reviewers like a repository link.
+Terrain maps: built once per body from the PQS height function (~20 s at 2.5 ms a frame)
+and kept in PluginData/terrain/<body>.rvaterrain, 1 MB each. Only built where another bodys
+aurora is in view and the body has terrain, so stock thats Mun, Minmus (Kerbin), Laythe,
+Vall, Tylo, Bop, Pol (Jool/Laythe), Ike (Duna), Gilly (Eve). Jool has no PQS so nothing to
+map. Build them all before packaging so users never see the smooth stand in: Alt+F12 set
+orbit around each one, wait for `terrain map 1024x512 ready` in the log, copy the
+.rvaterrain files from your install into the kits PluginData/terrain and commit them. The
+dev window also has a "Build the terrain map for <body> now" button in the diagnostics
+section that builds one regardless. The packager ships whatever that folder holds and warns
+if its missing. Your mod list doesnt matter, the map samples the PQS height which Kopernicus
+leaves at stock without a pack and Parallax doesnt touch, and each file carries the height
+at 48 check points so a user with different terrain there gets a fresh map built.
 
-1. Create a public repository, for example `HereComesTheBoom/RealisticVolumetricAurorae`.
-2. Copy the kit into it. The `.gitignore` in the kit root already excludes build
-   outputs and KSP's reference DLLs (never commit those). `Dev/settings.cfg` is fine to
-   publish.
-3. Commit, push, then **Releases > Draft a new release**: tag `v1.0.0`, title
-   `Realistic Volumetric Aurorae 1.0.0`, attach `RealisticVolumetricAurorae-1.0.0.zip`,
-   paste the changelog (the *1.0.0* section of the README).
-4. Fill in the `.version` file's two URLs and commit again:
-   - `URL`: the raw version file, for example
-     `https://raw.githubusercontent.com/HereComesTheBoom69/KSP-Realistic-Volumetric-Aurorae/main/GameData/RealisticVolumetricAurorae/RealisticVolumetricAurorae.version`
-     (KSP-AVC and MiniAVC compare the installed file against this one).
-   - `DOWNLOAD`: the SpaceDock page once it exists (step 2), or the GitHub release page.
-   Run the packager again after that so the zip carries the filled-in file. The zip you
-   upload to SpaceDock and GitHub should be the same bytes.
+## 1. GitHub
 
-## 2. SpaceDock, about 10 min
+Forum rules want plugin source available, AVC wants a url for the .version file, CKAN
+reviewers like a repo link.
 
-1. Account on https://spacedock.info. Use `HereComesTheBoom` so the author matches the
-   licence and the forum.
-2. **Add Mod**: game *Kerbal Space Program*; name `Realistic Volumetric Aurorae`; short
-   description (one line, see the forum post's first paragraph); **licence
-   `CC BY-NC-SA 4.0`** from the dropdown (it must match the LICENSE.txt in the zip, since
-   CKAN takes the licence from here); KSP version `1.12.5`; upload
-   `RealisticVolumetricAurorae-1.0.0.zip`; version `1.0.0`; changelog.
-3. Mod page, *Edit*: source code link = the GitHub repo; a background image and a few
-   screenshots (the night-side orbit shots and one from the ground).
-4. Mod page, *Edit*, tick **"Add to CKAN"** (SpaceDock calls it enabling CKAN).
-   SpaceDock's bot then opens the NetKAN pull request by itself, usually within a day
-   (done: PR 11697, see section 3).
+1. Public repo, HereComesTheBoom69/KSP-Realistic-Volumetric-Aurorae. The .gitignore excludes
+   build output, the KSP reference dlls and Dev/EVE_NOTES.md, never commit those.
+   Dev/settings.cfg is fine.
+2. Commit, push, Releases > Draft a new release: tag v<version>, title
+   `Realistic Volumetric Aurorae <version>`, attach the zip, paste the release notes.
+3. The .version files two urls:
+   - URL: the raw version file on main
+     (https://raw.githubusercontent.com/HereComesTheBoom69/KSP-Realistic-Volumetric-Aurorae/main/GameData/RealisticVolumetricAurorae/RealisticVolumetricAurorae.version)
+   - DOWNLOAD: spacedock page or the github releases page.
+   Run the packager again if you touched it so the zip has the right file. Same bytes to
+   SpaceDock and GitHub.
 
-For each later version: *Upload a new version* on SpaceDock with the new zip and
-changelog. CKAN indexes it automatically a few hours later, and the forum thread gets a
-post.
+## 2. SpaceDock
 
-## 3. CKAN, mostly waiting
+Account HereComesTheBoom so the author matches the license and forum. Add Mod: KSP, name
+Realistic Volumetric Aurorae, one line description (first para of the forum post),
+**license CC BY-NC-SA 4.0 from the dropdown** (CKAN takes the license from here so it has to
+match LICENSE.txt), KSP 1.12.5, upload the zip, version, changelog. Edit: source = github
+repo, background + a few screenshots. Tick "Add to CKAN", the bot opens the NetKAN PR
+itself (done, PR 11697).
 
-- The SpaceDock checkbox did its job: netkan-bot opened
-  https://github.com/KSP-CKAN/NetKAN/pull/11697 on 2026-10-14 (label "Mod request"). The
-  request lives on its own branch of that repository until it is merged, so it does not
-  show up in the `NetKAN/` folder before then; look at the pull requests, not the files.
-- How the volunteers work: bot requests are merged in sweeps every week or two, and a
-  sweep takes the ones that need no decision. A request with an open question from the
-  author waits for the maintainer who edits metadata by hand, and that queue was about
-  140 open PRs at the end of October 2026. Ours has such a question (ModuleManager and EVE
-  as `supports` instead of `depends`, plus the `graphics` tag), which is why the sweeps of
-  2026-10-17 and 2026-10-28 merged requests filed after it and left it alone.
-- The way out is to hand them a one-click merge: open a PR of your own with the finished
-  file next to this guide, `RealisticVolumetricAurorae.netkan`. Fork `KSP-CKAN/NetKAN` on
-  GitHub, open its `NetKAN` folder, *Add file* > *Create new file*, name it
-  `RealisticVolumetricAurorae.netkan`, paste the file, commit, then *Contribute* > *Open
-  pull request*. Title `Add RealisticVolumetricAurorae`; body: the author's version of
-  #11697 with the changes asked for there, either PR can be closed. Leave one comment on
-  #11697 pointing at the new PR. No need to mention anyone by name; the maintainers are
-  notified of every comment. The file keeps the shape the bot proposed (GitHub release
-  first, SpaceDock as the fallback) and adds the licence, the tags, the `supports`
-  entries, the links and the install stanza, so there is nothing left to decide.
-- What the file relies on: every GitHub release has the one zip attached and a tag
-  `v<version>` (the version edit strips the `v`); the SpaceDock version is the same
-  number; the `.version` file in the zip gives CKAN the KSP versions (`$vref`), so
-  `.version` and the csproj `<Version>` are bumped together on every release (the
-  packager warns when they disagree). The licence is written into the file because
-  GitHub's licence detection does not know the non-commercial Creative Commons licences.
-- Once merged, every later release is picked up on its own: publish the GitHub release
-  and upload to SpaceDock, nothing to file. Metadata changes later (a tag, a conflict, a
-  new dependency) are another small PR against the same file.
+Later versions: Upload a new version with the zip + changelog. CKAN picks it up a few hours
+later.
 
-## 4. Forum thread, about 20 min
+## 3. CKAN
 
-Post in **Add-on Releases**. The add-on posting rules, applied to RVA:
+- netkan-bot opened https://github.com/KSP-CKAN/NetKAN/pull/11697 on 2026-10-14. Lives on
+  its own branch until merged so it wont show in the NetKAN folder, look at the PRs.
+- Bot requests get merged in sweeps every week or two, the sweeps take the ones with no
+  open question. Ours has one (MM and EVE as supports not depends, + the graphics tag) so
+  the 10-17 and 10-28 sweeps skipped it. Queue for hand edited ones was ~140 PRs end of Oct.
+- Way out: open our own PR with the finished file thats next to this guide,
+  RealisticVolumetricAurorae.netkan. Fork KSP-CKAN/NetKAN, NetKAN folder, Add file,
+  paste, commit, open PR titled `Add RealisticVolumetricAurorae`, body says its the authors
+  version of #11697 with the changes asked for there. One comment on #11697 pointing at it.
+  The file keeps the shape the bot proposed (github release first, spacedock fallback) and
+  adds license, tags, supports, links and the install stanza.
+- What the file relies on: every github release has the one zip and a v<version> tag, the
+  spacedock version is the same number, the .version in the zip gives CKAN the KSP versions
+  ($vref), so .version and the csproj <Version> get bumped together (packager warns if they
+  dont match). License is written in because github doesnt detect the NC creative commons
+  ones.
+- Once merged every later release is picked up on its own.
 
-- The title carries the KSP version and the mod version:
-  `[1.12.x] Realistic Volumetric Aurorae (RVA) v1.1.1 - volumetric aurorae for Kerbin, Jool and Laythe`
-- The licence is named in the post **and** included in the download (it is, as
-  `LICENSE.txt` in the zip).
-- A link to the source (GitHub). Plugins must have their source available.
-- Download links: SpaceDock (primary), GitHub release (mirror), CKAN once it is indexed.
-- Screenshots: at least one in the post body. The forum shows the first one in listings.
+## 4. Forum
 
-`ForumPost.md` next to this file is the first post, ready to paste. The forum takes
-Markdown-ish BBCode; headings become bold lines. Paste, then tidy in the editor. Fill in
-the two links and attach the images.
+Add-on Releases. Rules as they apply here:
+- Title carries the KSP and mod version:
+  `[1.12.x] Realistic Volumetric Aurorae (RVA) v1.2.0 - volumetric aurorae for Kerbin, Jool, Laythe, Duna and Eve`
+- License named in the post AND in the download (LICENSE.txt in the zip).
+- Link to source. Plugins must have source available.
+- Download links: SpaceDock, GitHub release, CKAN once indexed.
+- At least one screenshot in the body, the forum shows the first one in listings.
 
-## 5. Every later release, the short list
+ForumPost.md is the first post ready to paste. Forum takes markdownish bbcode, headings
+become bold lines. Paste, tidy, fill links, attach images.
 
-1. Bump three things together: the `Version` const in `RVABootstrap.cs`, `<Version>` in
-   the csproj, and `VERSION` in the `.version` file.
-2. Rebuild what changed (shader to bundle, C# to DLL) **from the repository's source**,
-   run the packager, then test the zip itself (step 0.5).
-3. GitHub release (tag `v<version>`, the zip, body from `Release/ReleaseNotes-<version>.md`),
-   SpaceDock new version (same zip, the same notes as its changelog), a reply in the
-   forum thread (`Release/ForumUpdate-<version>.md`), and the first post refreshed from
-   `ForumPost.md` with the thread title's version bumped. CKAN follows SpaceDock on its
-   own.
+## 5. Every release, short version
+
+1. Bump three things together: Version const in RVABootstrap.cs, <Version> in the csproj,
+   VERSION in the .version file.
+2. Rebuild what changed from the repo source, run the packager, test the zip itself.
+3. GitHub release (tag v<version>, zip, body from Release/ReleaseNotes-<version>.md),
+   SpaceDock new version (same zip, same notes), reply in the thread
+   (Release/ForumUpdate-<version>.md), refresh the first post from ForumPost.md and bump
+   the thread title. CKAN follows on its own.

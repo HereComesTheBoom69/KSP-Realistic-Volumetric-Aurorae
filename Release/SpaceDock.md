@@ -1,37 +1,37 @@
 # SpaceDock listing text
 
-## Short description (one line, shown in listings)
-Volumetric aurorae for Kerbin, Jool and Laythe: folding ribbons, rays and a storm cycle, raymarched every frame, hidden by EVE's volumetric clouds, with a live tuning window. No dependencies.
+## Short description (one line)
+Volumetric aurorae for Kerbin, Jool, Laythe, Duna and Eve. Folding ribbons, rays, a storm cycle, raymarched every frame, hidden by EVE's clouds, live tuning window. No dependencies.
 
-## Long description (SpaceDock takes Markdown)
+## Long description (spacedock takes markdown)
 
-**Realistic Volumetric Aurorae (RVA)** draws volumetric aurorae around Kerbin, Jool and Laythe. Not a texture but a raymarched glow layer: thin, folding ribbons that curl back on themselves, vertical rays tapering to tips, green at the base and red at the top, three arcs forming the auroral oval. It is quiet most of the time. Then a storm comes, the oval widens, slides toward the equator and the outer arcs fade in, and it settles down again. From the ground the curtains fill the sky. From orbit the oval sits on the night side and follows the terminator.
+**Realistic Volumetric Aurorae (RVA)** draws volumetric aurorae around Kerbin, Jool, Laythe, Duna and Eve. Not a texture, a raymarched glow layer: thin folding ribbons that curl back on themselves, rays tapering off at the top, three arcs forming the oval, each body in its own colours. Quiet most of the time, then a storm comes through, the oval widens and slides toward the equator, the outer arcs fade in, and it settles back down. From the ground the curtains fill the sky. From orbit the oval sits on the night side and follows the terminator.
 
 **Features**
 
-- Volumetric ribbons with folds and rays, animated, with a configurable storm cycle
+- Volumetric ribbons with folds and rays, animated, configurable storm cycle
 - Fades out past the terminator
-- Hidden where your vessel or nearby terrain is in front of it, with crisp silhouettes at any render scale
-- With EVE's volumetric clouds: hidden per pixel by the clouds' own transmittance
-- Drawn in flight, in the map view and in the Tracking Station
-- 1.1.0: Jool's aurora, a gas giant's in hydrogen pinks and violets tight around the poles, almost always on, visible from Jool orbit and on Jool's limb from Laythe. And Laythe's, in oxygen greens and reds, driven by Jool's magnetosphere and lighting the whole moon while Laythe is in Jool's shadow. Any body can be given one with a config file
-- 1.1.0: the aurora lights your vessel (not the ground or the clouds) from the directions its light comes from. Switchable per body
-- Live tuning window (Alt+F8): brightness, colours, rays, altitude, latitude, ribbon width and folds, animation speed, time between storms, render scale, with per-row reset and *Save*
-- No dependencies. Scatterer-compatible
+- Hidden where your vessel or nearby terrain is in front of it, crisp silhouettes at any render scale
+- With EVE: hidden by the clouds, volumetrics per pixel by there own transmittance and the 2D layers as drawn. Only clouds and terrain ever mask it, at any altitude
+- Drawn in flight, map view and the tracking station
+- Five bodies with there own looks: Kerbin's green and red oval, Jool's gas giant aurora in hydrogen pinks and violets tight around the poles, Laythe's oxygen aurora driven by Jool's magnetosphere (storms down to the equator, the whole moon lit while its in Jool's shadow), Duna's pale green with the CO2 violet-blue, Eve's thin bright sheet above the clouds. Any body can get one with a config file
+- The aurora lights your vessel (not the ground or clouds) from the directions the light comes from. Per body switch
+- Live tuning window (Alt+F8): brightness, colours, rays, altitude, latitude, ribbon width and folds, animation speed, time between storms, render scale, per row reset and Save
+- No dependencies. Scatterer compatible
 
-**Install:** copy the `GameData/RealisticVolumetricAurorae` folder into your GameData (delete any older copy first). Nothing else is needed.
+**Install:** copy the `GameData/RealisticVolumetricAurorae` folder into your GameData (delete any older copy first). Nothing else needed.
 
-**Optional:** EVE with volumetric clouds (cloud occlusion); SPVE and ModuleManager (the included compatibility patches remove SPVE's own aurora layers on Kerbin, Jool and Laythe so RVA replaces them).
+**Optional:** EVE with volumetric clouds (cloud occlusion). SPVE + ModuleManager (the included patches remove SPVE's own aurora layers on Kerbin, Jool, Laythe, Duna and Eve so RVA replaces them).
 
-**Performance:** the render scale (default 0.25 since 1.1.0, down from 0.35) is the cost. 0.2 is a third cheaper and 0.35 twice the price. Frames are accumulated over time since 1.1.0 (reprojected history, no grain), so a lower scale converges on the same picture.
+**Performance:** render scale (default 0.25) is the cost. 0.2 is a third cheaper, 0.35 twice the price. Frames are accumulated over time (reprojected history, no grain) so a lower scale converges on the same picture.
 
-**Known limits:** the aurora lights the vessel only, not the ground or the clouds; the ovals sit on the rotation poles (no magnetic tilt yet); the map view instance has no cloud occlusion.
+**Known limits:** lights the vessel only, not the ground or clouds. Ovals on the rotation poles (no magnetic tilt yet). Map view instance has no cloud occlusion.
 
-Licence: CC BY-NC-SA 4.0, (c) 2026 HereComesTheBoom. Source: https://github.com/HereComesTheBoom69/KSP-Realistic-Volumetric-Aurorae. Forum thread: https://forum.kerbalspaceprogram.com/topic/231944-realistic-volumetric-aurorae-rva-visual-mod/.
+License: CC BY-NC-SA 4.0, (c) 2026 HereComesTheBoom. Source: https://github.com/HereComesTheBoom69/KSP-Realistic-Volumetric-Aurorae. Forum: https://forum.kerbalspaceprogram.com/topic/231944-realistic-volumetric-aurorae-rva-visual-mod/
 
 ## Fields
-- Game: Kerbal Space Program. KSP version: 1.12.5
-- Licence dropdown: **CC BY-NC-SA 4.0** (CKAN reads the licence from here, so it must match LICENSE.txt)
-- Source code: the GitHub repository
-- Version: 1.1.1. Changelog: paste `Release/ReleaseNotes-1.1.1.md` (the same text as the GitHub release)
-- Tick **Add to CKAN** (mod page, Edit) after the first upload. SpaceDock's bot opens the NetKAN pull request for you.
+- Game: KSP. KSP version 1.12.5
+- License dropdown: **CC BY-NC-SA 4.0** (CKAN reads it from here, has to match LICENSE.txt)
+- Source code: the github repo
+- Version: 1.2.0, changelog: paste Release/ReleaseNotes-1.2.0.md (same text as the github release)
+- Tick **Add to CKAN** (mod page, Edit) after the first upload, spacedocks bot opens the NetKAN PR for you

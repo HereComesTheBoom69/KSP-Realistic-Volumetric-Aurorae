@@ -2,19 +2,9 @@
 // SPDX-License-Identifier: CC-BY-NC-SA-4.0  (see LICENSE.txt)
 using UnityEngine;
 
-/// <summary>
-/// CPU port of the aurora shader's hash / noise3 / fbm plus the two
-/// longitude-only quantities the shader used to compute per sample:
-///   - the band centreline meander shift (5-tap smoothed fbm)
-///   - the regional flare factor
-/// Both depend only on longitude, band seed, hemisphere and animation time,
-/// so AuroraMeanderTexture bakes them into a small lookup texture every frame
-/// and the shader reads them with one texture fetch per sample.
-/// </summary>
 public static class AuroraNoise
 {
-    /// <summary>Meander shift of a band centreline (in latNorm units, +/-0.225 max).
-    /// seedOffset must already include the +500 southern-hemisphere offset.</summary>
+
     public static float BandShift(float longitudeRad, float t, float seedOffset, float noiseScale)
     {
         Vector3 horizDir = new Vector3(Mathf.Cos(longitudeRad), 0f, Mathf.Sin(longitudeRad));
@@ -32,8 +22,6 @@ public static class AuroraNoise
         return meanderSmooth * 0.45f;
     }
 
-    /// <summary>Regional flare, 0..1. The shader maps it to lerp(0.7, 1.6, x).
-    /// Uses the plain band seed (no hemisphere offset), as the shader always did.</summary>
     public static float Flare01(float longitudeRad, float t, float seedOffset, float noiseScale)
     {
         Vector3 horizDir = new Vector3(Mathf.Cos(longitudeRad), 0f, Mathf.Sin(longitudeRad));
@@ -45,10 +33,6 @@ public static class AuroraNoise
         return SmoothStep(0.35f, 0.75f, flareNoise);
     }
 
-    /// <summary>Ribbon fold displacement (latNorm units) at a surface point, the
-    /// CPU twin of the shader's foldAt() (value only). hemi: 0 north, 1 south.
-    /// One fold field for all bands; each band samples it through its own
-    /// rotated + shifted domain, scaled by independence (shader: _BandIndependence).</summary>
     public static float Fold(float longitudeRad, float latNorm, float t, int hemi,
                              float foldStrength, float foldScale, float seedOffset, float independence)
     {
@@ -65,10 +49,6 @@ public static class AuroraNoise
         return (Fbm(fs) - 0.5f) * foldStrength;
     }
 
-    /// <summary>Latitude (latNorm) of the folded ribbon nearest the mean path at this
-    /// longitude: the zero of F(l) = l - latMean + fold(l) closest to latMean.
-    /// Found by scanning the fold's reach (strong folds make F non-monotonic, so
-    /// a fixed-point iteration would bounce) and interpolating the crossing.</summary>
     public static float RibbonLatitude(float longitudeRad, float latMean, float t, int hemi,
                                        float foldStrength, float foldScale, float seedOffset, float independence)
     {
@@ -85,17 +65,16 @@ public static class AuroraNoise
             if (aF < bestAbsF) { bestAbsF = aF; bestAbsL = l; }
             if (i > 0 && (F <= 0f) != (prevF <= 0f))
             {
-                float z = prevL + (l - prevL) * (prevF / (prevF - F));   // linear interpolation of the crossing
+                float z = prevL + (l - prevL) * (prevF / (prevF - F));
                 float d = Mathf.Abs(z - latMean);
                 if (d < bestD) { bestD = d; bestL = z; }
             }
             prevL = l; prevF = F;
         }
-        if (bestD == float.MaxValue) bestL = bestAbsL;   // no crossing in reach: closest approach
+        if (bestD == float.MaxValue) bestL = bestAbsL;
         return Mathf.Clamp01(bestL);
     }
 
-    /// <summary>Slow noise along the band that drives the local band thickness, 0..1.</summary>
     public static float WidthNoise01(float longitudeRad, float t, float seedOffset, float noiseScale)
     {
         Vector3 horizDir = new Vector3(Mathf.Cos(longitudeRad), 0f, Mathf.Sin(longitudeRad));
@@ -106,7 +85,6 @@ public static class AuroraNoise
         return Mathf.Clamp01(Fbm(input * noiseScale));
     }
 
-    /// <summary>HLSL smoothstep (Mathf.SmoothStep has different semantics).</summary>
     public static float SmoothStep(float edge0, float edge1, float x)
     {
         float u = Mathf.Clamp01((x - edge0) / (edge1 - edge0));
@@ -152,9 +130,6 @@ public static class AuroraNoise
         return Mathf.Lerp(nxy0, nxy1, f.z);
     }
 
-    /// <summary>Lattice hash, the shader's hashLattice() exactly (v3.20): integer
-    /// arithmetic on the lattice point, so CPU and GPU agree bit for bit and a
-    /// corner has one value whichever cell asks for it. 24-bit, uniform in [0, 1).</summary>
     public static float Hash(int x, int y, int z)
     {
         unchecked

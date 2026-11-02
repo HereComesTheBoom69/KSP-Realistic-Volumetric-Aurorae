@@ -4,9 +4,6 @@ using UnityEditor;
 using UnityEngine;
 using System.IO;
 
-// Menu: RVA > Build Shader Bundle
-// Builds every asset tagged with an AssetBundle name into <project>/AssetBundles/.
-// Aurora_Shader.shader.meta and AuroraBlit.shader.meta carry the tag "rva_shaders".
 public class BuildRVABundle
 {
     [MenuItem("RVA/Build Shader Bundle")]

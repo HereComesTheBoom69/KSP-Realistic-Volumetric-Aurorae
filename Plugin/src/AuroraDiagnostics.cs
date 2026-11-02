@@ -4,44 +4,21 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 
-/// <summary>
-/// Watches, every frame, for the things that can make the aurora jump or
-/// hitch, and logs each one, once and with a timestamp, to KSP.log, prefixed
-/// [RVA:diag]. The tuning window shows the last few lines.
-/// Nothing here changes what is rendered; the per-frame cost is a handful of
-/// material reads.
-///
-/// What it looks for (v3.19b):
-///   frame hitch: a frame more than 3x the running average, or over 100 ms
-///   GC: a garbage collection ran this frame (KSP's collector stops the world)
-///   AnimTime jump: _AnimTime advanced by something other than deltaTime x _AnimSpeed
-///                     (someone else wrote it, or it was reset)
-///   material jump: _Activity / _AltTop / _LatCenter / _BandSpacing / _LatWidth /
-///                     _Arc2Fade / _Arc3Fade / _NoiseScale / _FoldStrength changed by
-///                     more than 5 % in one frame (storm ramps move them by well under 1 %)
-///   storm: the scheduler's phase changed, or its intensity moved by > 0.05 in a frame
-///   origin shift: the planet or the camera moved by more than 2 km in one frame
-///                     (KSP's floating origin / Krakensbane)
-///   LUT stale: the meander lookup texture was not uploaded for 5+ frames,
-///                     or its bake took over 50 ms
-///   ApplySettings: the settings were re-pushed to the material (the window does this on any slider change)
-/// </summary>
 public class AuroraDiagnostics : MonoBehaviour
 {
     public Material             auroraMaterial;
     public Transform            planet;
-    public Transform            cam;          // set each frame by the owner (the flight camera)
+    public Transform            cam;
     public AuroraStormScheduler storm;
     public AuroraMeanderTexture meander;
     public bool                 active = true;
 
-    /// <summary>Most recent lines, newest first (for the window).</summary>
     public readonly List<string> Recent = new List<string>();
     public int EventCount { get; private set; }
 
     const int    MaxRecent   = 8;
-    const int    MaxLogLines = 400;          // hard cap per session, so a stuck condition cannot flood KSP.log
-    const float  PerKindGap  = 0.5f;         // seconds between two logs of the same kind
+    const int    MaxLogLines = 400;
+    const float  PerKindGap  = 0.5f;
 
     static readonly string[] Watched = { "_Activity", "_AltTop", "_LatCenter", "_BandSpacing", "_LatWidth", "_Arc2Fade", "_Arc3Fade", "_NoiseScale", "_FoldStrength" };
 
@@ -57,7 +34,6 @@ public class AuroraDiagnostics : MonoBehaviour
     int     applyCalls, applyLogged;
     readonly Dictionary<string, float> lastLogAt = new Dictionary<string, float>();
 
-    /// <summary>Called by the owner whenever ApplySettings() runs.</summary>
     public void NoteApplySettings() { applyCalls++; }
 
     void LateUpdate()
@@ -67,18 +43,15 @@ public class AuroraDiagnostics : MonoBehaviour
         float now = Time.realtimeSinceStartup;
         float dt  = Time.unscaledDeltaTime;
 
-        // ---- frame hitch -----------------------------------------------------
         if (primed && dt > Mathf.Max(0.1f, 3f * emaDt))
             Report("frame hitch", $"{dt * 1000f:F0} ms (average {emaDt * 1000f:F1} ms)");
         emaDt = Mathf.Lerp(emaDt, dt, 0.05f);
 
-        // ---- garbage collection ------------------------------------------------
         int gc = GC.CollectionCount(0);
         if (lastGc >= 0 && gc != lastGc)
             Report("GC", $"collection #{gc} this frame ({dt * 1000f:F0} ms)");
         lastGc = gc;
 
-        // ---- animation time: must advance by deltaTime x speed, nothing else --------
         float anim  = auroraMaterial.GetFloat("_AnimTime");
         float speed = auroraMaterial.GetFloat("_AnimSpeed");
         if (primed)
@@ -90,7 +63,6 @@ public class AuroraDiagnostics : MonoBehaviour
         }
         lastAnim = anim;
 
-        // ---- material values the storm drives: smooth, or somebody poked them ----
         for (int i = 0; i < Watched.Length; i++)
         {
             float v = auroraMaterial.GetFloat(Watched[i]);
@@ -103,7 +75,6 @@ public class AuroraDiagnostics : MonoBehaviour
             lastWatched[i] = v;
         }
 
-        // ---- storm scheduler --------------------------------------------------
         if (storm != null)
         {
             int phase = storm.PhaseIndex;
@@ -114,7 +85,6 @@ public class AuroraDiagnostics : MonoBehaviour
             lastPhase = phase; lastIntensity = storm.currentStormIntensity;
         }
 
-        // ---- floating origin / camera -------------------------------------------
         if (planet != null)
         {
             Vector3 p = planet.position;
@@ -130,7 +100,6 @@ public class AuroraDiagnostics : MonoBehaviour
             lastCam = c; haveCam = true;
         }
 
-        // ---- meander lookup texture -----------------------------------------------
         if (meander != null)
         {
             int up = meander.LastUploadFrame;
@@ -141,7 +110,6 @@ public class AuroraDiagnostics : MonoBehaviour
             lastUploadSeen = up;
         }
 
-        // ---- settings pushes -------------------------------------------------------
         if (applyCalls != applyLogged)
         {
             Report("ApplySettings", $"called {applyCalls - applyLogged}x since the last note");

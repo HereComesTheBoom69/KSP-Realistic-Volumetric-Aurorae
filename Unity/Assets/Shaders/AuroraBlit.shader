@@ -1,131 +1,25 @@
 // Realistic Volumetric Aurorae (RVA). Copyright (c) 2026 HereComesTheBoom ("Realistic Volumetric Aurorae")
 // SPDX-License-Identifier: CC-BY-NC-SA-4.0  (see LICENSE.txt)
-// =============================================================================
-// AuroraBlit.shader: composites the low-resolution aurora buffer onto the
-// flight camera (full-screen blits from command buffers, see AuroraRenderer.cs)
-//
-// The aurora buffer (_MainTex) holds  rgb = the aurora the ray meets before
-// it first crosses the cloud-top shell (HDR)   a = aurora irradiance on the
-// cloud deck under that pixel (HDR, from the emission map). A second buffer
-// (_FarTex) holds the aurora beyond that shell. Pass 0 adds
-//     near + far x T
-// where T is EVE's own per-pixel cloud transmittance (its `colorBuffer`
-// alpha), so the clouds occlude exactly the aurora behind them (looking up
-// from the ground all of it, from orbit only the band beyond the limb seen
-// through the limb clouds) at every altitude, with no composite-order
-// switch (v3.12). With occlusion off (or no EVE buffer) T = 1 and the
-// composite event decides, as before. The upsample is depth-aware (v3.16):
-// far.a holds the scene depth each texel was cut against, and a screen pixel
-// only blends texels whose depth agrees with its own.
-//
-//   Pass 0  aurora, additive onto the scene
-//   Pass 1  replaces the scene with the aurora buffer (debug: "aurora only";
-//           the irradiance is shown as a flat tint)
-//   Pass 2  CLOUD LIGHT, additive. The cloud layer as EVE shaded it comes from
-//           one of three sources (_CloudGrabMode):
-//             2  EVE's own reconstructed cloud buffer, which its command buffer
-//                publishes as the global texture `colorBuffer` (public source:
-//                DeferredRaymarchedVolumetricCloudsRenderer.cs). Verified
-//                in-game: rgb = lit cloud colour (black on the night side,
-//                his clouds get no ambient there), a = transmittance (1 =
-//                clear). So in this mode the light uses the OPACITY, 1 - a:
-//                a cloud top is a white diffuse surface, and opacity carries
-//                its shape and thickness. _CloudBufferFormat selects how the
-//                alpha is read in case a version stores it the other way.
-//                Opacity below _CloudMinOpacity counts as sky: EVE's haze
-//                and ambience layers leave ~0.1 everywhere (v3.10).
-//             1  the difference of two GrabPass textures _AuroraBeforeClouds /
-//                _AuroraAfterClouds taken at render queues 2997 / 2999 around
-//                EVE's composite quad (2998).
-//             0  the difference of two command-buffer copies _AuroraPreCloud /
-//                _AuroraSceneCopy taken at two camera events.
-//           Multiplying the aurora irradiance by that cloud amount lights the
-//           cloud tops in the aurora's colour with the clouds' own shape,
-//           without touching the cloud shader.
-//   Pass 3  debug: left half = the cloud amount pass 2 is lighting (white =
-//           cloud, after the haze floor); right half = the aurora's irradiance
-//           on the cloud-top shell, in the light's colour, where the cloud
-//           light would land and how strong, clouds or not (v3.11)
-//   Pass 4  TEMPORAL RESOLVE (1.1.0). Drawn by AuroraRenderer right after the
-//           march, as one triangle into the two history buffers (near, far),
-//           which are up to 2x the render buffers' size. For each history texel:
-//             - the current frame's nearest sample (the march tilted every ray by
-//               this frame's sub-pixel jitter, so the samples sit at k + 1/2 + j in
-//               render pixels) with a Gaussian weight of its distance, so the
-//               history pixels near this frame's samples take them in strongly,
-//               the others wait for a frame whose jitter lands nearer: over the
-//               jitter sequence the history converges on the image at its own,
-//               higher resolution (the "TAAU" reconstruction);
-//             - the previous history, reprojected: the texel's ray is rebuilt
-//               from the camera basis, the aurora's mean distance along it (aux
-//               target, or the shell's mid radius where nothing was seen) gives
-//               a world point, _PrevVP (last frame's projection x view, planet-
-//               relative) says where that point was on screen last frame. The
-//               aurora is fixed in planet-centred, world-oriented space, so this
-//               is exact for camera rotation and right to first order for the
-//               camera's translation;
-//             - rejection: no history outside last frame's view, or where the
-//               near-scene depth the march was cut at (far.a) differs from last
-//               frame's (a vessel part or terrain moving across the aurora);
-//             - variance clipping: the history is clamped to the mean +/- gammasigma of the
-//               current frame's 3x3 neighbourhood, so the animation's changes
-//               and anything the rejection misses cannot ghost for long;
-//             - blend: lerp(history, current, (1 - weight) x gaussian).
-//           near.a (irradiance) and far.a (depth cut) are the current frame's,
-//           not accumulated. The composite then reads the history instead of the
-//           render buffers; with accumulation off nothing here runs.
-//
-// UVs come from the fragment's own screen pixel position (VPOS), so the
-// orientation does not depend on how Unity set up the blit quad: the aurora
-// buffer was rasterised with the same camera matrices as the screen, so
-// pixel (x, y) of the screen reads pixel (x, y) of the buffer. If a platform
-// still shows it upside-down, _FlipY = 1 mirrors it (live toggle in the GUI).
-//
-// Tonemap: 1 - exp(-c): bright cores roll off to white instead of clipping.
-// =============================================================================
 Shader "RVA/AuroraBlit"
 {
     Properties
     {
-        _MainTex  ("Aurora RT, before the cloud shell (rgb), irradiance (a)", 2D) = "black" {}
+        _MainTex  ("Aurora RT, before the cloud shell (rgb), slab chord (a)", 2D) = "black" {}
         _FarTex   ("Aurora RT, beyond the cloud shell (set by C#)", 2D) = "black" {}
-        // 1 = the far part of the aurora is multiplied by EVE's per-pixel cloud
-        // transmittance (buffer mode only): the clouds occlude what is behind
-        // them and nothing else, from every altitude
-        _CloudOcclusion ("Clouds occlude the aurora per pixel (0 or 1)", Float) = 1.0
-        // 1 = depth-aware upsample: each screen pixel takes only the buffer
-        // texels whose scene depth (far.a, km) agrees with its own, so the
-        // silhouettes the march cut against (vessel, terrain, horizon) come
-        // out at screen resolution instead of as blurred buffer texels
+
+        _CloudOcclusion ("Cloud occlusion from EVE's volumetrics buffer: 0 off (none, or stale), 1 live, with the horizon boost", Float) = 1.0
+
         _EdgeAware      ("Depth-aware upsample (0 or 1)", Float) = 1.0
-        // Depth (km) within which the aurora march clips against the scene (5 % of the
-        // planet radius, 30 km on Kerbin; set by C#). The upsample is depth-aware only
-        // there: nearer pixels and texels must agree, everything farther is "sky" (v3.24)
+
         _NearDepthKm    ("Near depth (km)", Float) = 30.0
         _Exposure ("Exposure", Float) = 1.0
         _FlipY    ("Flip Y (0 or 1)", Float) = 0.0
-        // Blend toward a 5-tap blur of the low-res buffer: hides sample jitter
-        // grain and the blockiness of the upsample at the cost of a little
-        // sharpness (0 = plain bilinear, 1 = fully smoothed)
+
         _Smoothing ("Upsample smoothing", Range(0, 1)) = 0.5
-        _GlowColor      ("Cloud light colour", Color) = (0.4, 0.9, 0.5, 1)
-        _CloudLightGain ("Cloud light gain", Float) = 1.0
-        // 1 when the camera is above the cloud tops; the underside factor when
-        // it is below them (thin cloud glows a little from transmitted light)
-        _CloudLightView ("Cloud light view factor", Float) = 1.0
-        _AuroraPreCloud ("Scene before the clouds (set by C#)", 2D) = "black" {}
-        _CloudGrabMode  ("0 = camera-event copies, 1 = render-queue grabs, 2 = EVE cloud buffer", Float) = 2.0
-        _GrabFlipY      ("Flip Y of the grabs / EVE buffer (0 or 1)", Float) = 0.0
-        // How EVE's buffer stores its alpha: 0 / 1 = opacity, 2 = transmittance (verified for the current volumetrics)
+        _GrabFlipY      ("Flip Y of EVE's buffer (0 or 1)", Float) = 0.0
+
         _CloudBufferFormat ("EVE buffer format", Float) = 2.0
-        // Mode 2: opacity below this gets no light. EVE's haze / ambience
-        // layers leave a small opacity over the whole sky (~0.1 at the KSC);
-        // without the threshold the light tints the clear sky, with it only
-        // real cloud is lit (0..threshold -> 0, threshold..1 -> 0..1)
-        _CloudMinOpacity ("Min cloud opacity lit", Range(0, 0.9)) = 0.15
-        // 1.1.0, pass 5: the occluder body's terrain height map (metres above the datum, u =
-        // longitude, v = latitude) and x = the datum radius in metres, y = 1 while the map is in
-        // use (the mesh is then a unit sphere the pass pushes out), 0 to draw the mesh as it is
+
         _OccluderHeightMap    ("Occluder terrain height map (set by C#)", 2D) = "black" {}
         _OccluderHeightParams ("Occluder datum radius, map on (set by C#)", Vector) = (0, 0, 0, 0)
     }
@@ -147,40 +41,35 @@ Shader "RVA/AuroraBlit"
         float _EdgeAware;
         float _NearDepthKm;
         UNITY_DECLARE_DEPTH_TEXTURE(_CameraDepthTexture);
+        float4 _CameraDepthTexture_TexelSize;
         float _Exposure;
         float _FlipY;
         float _Smoothing;
-        float4 _GlowColor;
-        float _CloudLightGain;
-        float _CloudLightView;
-        sampler2D _AuroraPreCloud;
-        float _CloudGrabMode;
         float _GrabFlipY;
         float _CloudBufferFormat;
-        float _CloudMinOpacity;
-        // Global set by the command buffer: the camera target after the clouds (event mode)
-        sampler2D _AuroraSceneCopy;
-        // Globals written by the GrabPasses of the AuroraGrab* objects (queue mode)
-        sampler2D _AuroraBeforeClouds;
-        sampler2D _AuroraAfterClouds;
-        // Global written by EVE's cloud renderer: its reconstructed cloud buffer (mode 2)
+
         sampler2D colorBuffer;
 
-        // ---- temporal resolve (pass 4, 1.1.0), all set by AuroraRenderer each frame
-        sampler2D _CurNear, _CurFar, _CurAux;      // this frame's render buffers (aux.r = mean aurora distance, world units)
-        sampler2D _HistNear, _HistFar;             // last frame's history buffers
-        float4    _CurTexelSize;                   // (1/w, 1/h, w, h) of the render buffers
-        float4    _HistTexelSize;                  // (1/w, 1/h, w, h) of the history buffers (this pass's target)
-        float4    _TemporalJitter;                 // xy = this frame's sample offset, render pixels, in the buffer's memory axes
-        float4    _TemporalParams;                 // x = history weight, y = clip gamma, z = 1 / (2sigma^2) of the reconstruction kernel, w = 1 when the history is valid
-        float4    _CamPosRel;                      // camera position relative to the planet centre (this renderer's units)
-        float4    _ShellParams;                    // x = radius of the shell's middle (R + (base + top) / 2), y = a "far" distance for rays that miss it
-        float4x4  _PrevVP;                         // last frame's projection x view (Camera.projectionMatrix convention) x translate(planet centre)
-        // (the camera basis comes from UNITY_MATRIX_V, the field of view from unity_CameraProjection, both Unity's)
+        sampler2D _CurNear, _CurFar, _CurAux;
+        sampler2D _HistNear, _HistFar;
+        float4    _CurTexelSize;
+        float4    _HistTexelSize;
+        float4    _TemporalJitter;
+        float4    _TemporalParams;
+        float4    _TemporalParams2;
+        float4    _CamPosRel;
+        float     _CloudGraze;
+        sampler2D _LimbModelDepth;
+        float     _LimbModelOn;
+        float     _GroundCapKm;
+        sampler2D _Cloud2DBlack, _Cloud2DWhite;
+        float     _Cloud2DOn;
+        float     _BlitDebug;
+        float4    _ShellParams;
+        float4x4  _PrevVP;
 
         struct v2f { float2 dummy : TEXCOORD0; };
 
-        // Position goes out as a separate SV_POSITION so VPOS can be read in frag
         v2f vert (float4 vertex : POSITION, float2 texcoord : TEXCOORD0, out float4 outpos : SV_POSITION)
         {
             v2f o;
@@ -196,56 +85,51 @@ Shader "RVA/AuroraBlit"
             return uv;
         }
 
-        // Aurora buffer at this pixel, smoothed: rgb = aurora before the cloud
-        // shell, a = irradiance (both HDR x exposure)
-        float4 bufferSample(float2 uv)
+        bool terrainDrawnNear(float2 uv, float zRef)
         {
-            float4 c = tex2D(_MainTex, uv);
-            if (_Smoothing > 0.001)
+            float2 px = _CameraDepthTexture_TexelSize.xy;
+            [unroll]
+            for (int k = 0; k < 8; k++)
             {
-                float2 px = _MainTex_TexelSize.xy;
-                float4 n = tex2D(_MainTex, uv + float2( px.x, 0))
-                         + tex2D(_MainTex, uv + float2(-px.x, 0))
-                         + tex2D(_MainTex, uv + float2(0,  px.y))
-                         + tex2D(_MainTex, uv + float2(0, -px.y));
-                c = lerp(c, (c * 2.0 + n) / 6.0, _Smoothing);
+                float  d   = (k < 4) ? 8.0 : 24.0;
+                int    q   = k & 3;
+                float2 off = (q == 0) ? float2(d, 0) : (q == 1) ? float2(-d, 0) : (q == 2) ? float2(0, d) : float2(0, -d);
+                float raw2 = SAMPLE_DEPTH_TEXTURE(_CameraDepthTexture, uv + off * px);
+                if (raw2 <= 0.0 || raw2 >= 1.0) continue;
+                float z2 = LinearEyeDepth(raw2);
+                if (abs(z2 - zRef) <= 0.3 * zRef) return true;
             }
-            return c * _Exposure;
+            return false;
         }
 
-        // Both aurora buffers at this screen pixel, upsampled DEPTH-AWARE (v3.16).
-        // The buffers are a fraction of the screen, so the occlusion edges the
-        // march cut against (vessel, nearby terrain, the horizon) used to come
-        // back as blurred, stair-stepped texels. Each buffer texel carries the
-        // scene depth its march used (far.a, km); the screen pixel reads its own
-        // depth and weights the 3x3 texels around it by a tent (radius 1 = plain
-        // bilinear, wider with _Smoothing) x depth agreement, so texels on the
-        // other side of a silhouette drop out. A pixel nearer than everything
-        // the buffer saw is an occluder thinner than a texel (a strut, a chute
-        // line) and gets no aurora at all; a pixel with no agreeing texel at
-        // all falls back to the plain tent. Texels with depth 0 (depth
-        // occlusion off, nothing marched, or, since v3.24, scene depth beyond
-        // the near range the march clips against) are "sky": they agree with
-        // every sky pixel, and a near pixel never takes them nor a sky pixel a
-        // near texel. The near range is _NearDepthKm (5 % of the planet radius),
-        // the same rule the aurora shader uses for its cut, so over terrain seen
-        // from orbit the upsample is the plain smoothed one again instead of
-        // breaking into per-texel grain along the horizon.
-        void auroraSample(float2 uv, out float4 nearOut, out float3 farOut)
+        void auroraSample(float2 uv, out float4 nearOut, out float3 farOut, out float farVis)
         {
             float2 texel = _MainTex_TexelSize.xy;
-            float2 pos   = uv * _MainTex_TexelSize.zw - 0.5;     // texel space, centre-aligned
-            float2 c     = floor(pos + 0.5);                      // nearest texel
-            float  r     = 1.0 + 1.2 * _Smoothing;                // tent radius (texels)
+            float2 pos   = uv * _MainTex_TexelSize.zw - 0.5;
+            float2 c     = floor(pos + 0.5);
+            float  r     = 1.0 + 1.2 * _Smoothing;
             bool   aware = _EdgeAware > 0.5;
             float  zHR   = 0.0;
-            bool   pixNear = false;
+            bool   pixNear = false, pixCleared = true, pixGround = false;
             if (aware)
             {
-                zHR = min(LinearEyeDepth(SAMPLE_DEPTH_TEXTURE(_CameraDepthTexture, uv)), 1e7) * 0.001;
-                pixNear = zHR < _NearDepthKm;
-                if (!pixNear) zHR = 0.0;                                // sky / far scene
+                float raw  = SAMPLE_DEPTH_TEXTURE(_CameraDepthTexture, uv);
+                pixCleared = raw <= 0.0 || raw >= 1.0;
+                zHR = min(LinearEyeDepth(raw), 1e7) * 0.001;
+                pixNear = !pixCleared && zHR < _NearDepthKm;
+                pixGround = !pixCleared && !pixNear && zHR < _GroundCapKm;
+
+                if (pixCleared && _LimbModelOn > 0.5)
+                {
+                    float iM = tex2Dlod(_LimbModelDepth, float4(uv, 0, 0)).r;
+                    if (iM > 0.0)
+                    {
+                        float zM = 1.0 / iM;
+                        if (!terrainDrawnNear(uv, zM)) { pixGround = true; zHR = min(zM, 1e7) * 0.001; }
+                    }
+                }
             }
+            farVis = (pixNear || pixGround) ? 0.0 : 1.0;
 
             float4 nSum = 0, nTent = 0;
             float3 fSum = 0, fTent = 0;
@@ -267,15 +151,17 @@ Shader "RVA/AuroraBlit"
                         float  wd  = 1.0;
                         if (aware)
                         {
-                            bool texNear = ff.a > 0.0;
+                            bool texNear  = ff.a > 0.0;
+                            bool texDatum = ff.a < 0.0;
                             if (texNear && pixNear)
                             {
                                 float rel = abs(ff.a - zHR) / max(min(ff.a, zHR), 1e-4);
-                                wd   = saturate(1.0 - rel * 10.0);       // full agreement within 0 %, none beyond 10 %
+                                wd   = saturate(1.0 - rel * 10.0);
                                 zMin = min(zMin, ff.a);
                             }
-                            else if (texNear != pixNear) wd = 0.0;      // one side of a silhouette, the other not
-                            // both sky: plain tent weight
+                            else if (texNear != pixNear) wd = 0.0;
+                            else if (texDatum && !pixGround) wd = 0.0;
+
                         }
                         nSum  += nn * (wb * wd);  fSum  += ff.rgb * (wb * wd);  wSum  += wb * wd;
                         nTent += nn * wb;         fTent += ff.rgb * wb;         wTent += wb;
@@ -289,84 +175,49 @@ Shader "RVA/AuroraBlit"
             farOut  *= _Exposure;
         }
 
-        // EVE's cloud buffer as (premultiplied colour, opacity)
-        float4 eveCloud(float2 uv)
+        float cloudBufferT(float2 uv)
         {
             float2 guv = uv;
             guv.y = lerp(guv.y, 1.0 - guv.y, _GrabFlipY);
-            float4 cb = tex2D(colorBuffer, guv);
-            float opacity = (_CloudBufferFormat > 1.5) ? saturate(1.0 - cb.a) : saturate(cb.a);
-            float3 c = (_CloudBufferFormat > 0.5) ? cb.rgb * opacity : cb.rgb;
-            return float4(max(c, 0.0), opacity);
+            float a = tex2D(colorBuffer, guv).a;
+            return (_CloudBufferFormat > 1.5) ? saturate(a) : saturate(1.0 - a);
         }
 
-        // The cloud layer EVE drew this frame (premultiplied colour, >= 0).
-        // One return per function: fxc tracks an early return inside a branch
-        // as a "potentially uninitialized" result and warns.
-        float3 cloudDelta(float2 uv)
+        float grazeExponent(float2 uv)
         {
-            float3 delta = float3(0, 0, 0);
-            if (_CloudGrabMode > 1.5)
-                delta = eveCloud(uv).rgb;
-            else if (_CloudGrabMode > 0.5)
-            {
-                float2 guv = uv;
-                guv.y = lerp(guv.y, 1.0 - guv.y, _GrabFlipY);
-                delta = max(tex2D(_AuroraAfterClouds, guv).rgb - tex2D(_AuroraBeforeClouds, guv).rgb, 0.0);
-            }
-            else
-                delta = max(tex2D(_AuroraSceneCopy, uv).rgb - tex2D(_AuroraPreCloud, uv).rgb, 0.0);
-            return delta;
+            if (_CloudGraze <= 0.0) return 1.0;
+            float chord = tex2D(_MainTex, uv).a;
+            return 1.0 + _CloudGraze * max(chord - 1.0, 0.0);
         }
 
-        // How much cloud the light falls on at this pixel (0..1-ish).
-        // Buffer mode: the opacity above the haze floor (opacity up to the
-        // floor is sky, not cloud). Grab modes: the luminance of the cloud
-        // layer the frame difference captured.
-        float cloudAmount(float2 uv)
-        {
-            float amount = 0.0;
-            if (_CloudGrabMode > 1.5)
-            {
-                float t = clamp(_CloudMinOpacity, 0.0, 0.95);
-                amount = saturate((eveCloud(uv).a - t) / (1.0 - t));
-            }
-            else
-                amount = dot(cloudDelta(uv), float3(0.299, 0.587, 0.114));
-            return amount;
-        }
-
-        // Transmittance of EVE's clouds along this pixel's ray (1 = clear).
-        // Buffer mode with occlusion on: from the cloud buffer's alpha; otherwise
-        // 1, and the composite event alone decides the order.
         float cloudTransmittance(float2 uv)
         {
             float T = 1.0;
-            if (_CloudOcclusion > 0.5 && _CloudGrabMode > 1.5)
+            if (_CloudOcclusion > 0.5)
             {
-                float2 guv = uv;
-                guv.y = lerp(guv.y, 1.0 - guv.y, _GrabFlipY);
-                float a = tex2D(colorBuffer, guv).a;
-                T = (_CloudBufferFormat > 1.5) ? saturate(a) : saturate(1.0 - a);
+                float Tb = cloudBufferT(uv);
+                if (Tb < 1.0 && Tb > 0.0) Tb = pow(Tb, min(grazeExponent(uv), 64.0));
+                T *= Tb;
+            }
+            if (_Cloud2DOn > 0.5)
+            {
+                float3 b = tex2D(_Cloud2DBlack, uv).rgb, w = tex2D(_Cloud2DWhite, uv).rgb;
+                T *= saturate(dot(w - b, 1.0 / 3.0));
             }
             return T;
         }
 
-        // The whole aurora at this pixel as it should appear: the part in front
-        // of the clouds plus the part behind them through their transmittance
         float3 auroraAt(float2 uv)
         {
-            float4 nearC; float3 farC;
-            auroraSample(uv, nearC, farC);
-            return nearC.rgb + farC * cloudTransmittance(uv);
+            float4 nearC; float3 farC; float farVis;
+            auroraSample(uv, nearC, farC, farVis);
+            return nearC.rgb + farC * (farVis * cloudTransmittance(uv));
         }
 
         float3 tonemap(float3 c) { return 1.0 - exp(-c); }
 
-        // ---- temporal resolve (pass 4, 1.1.0): see the header -----------------
         struct v2fTri { float2 dummy : TEXCOORD0; };
 
-        // one triangle over the whole target (vertex ids 0..2)
         v2fTri vertTri (uint vid : SV_VertexID, out float4 outpos : SV_POSITION)
         {
             v2fTri o;
@@ -378,36 +229,31 @@ Shader "RVA/AuroraBlit"
 
         struct ResolveOut
         {
-            float4 near : SV_Target0;   // accumulated near aurora, a = this frame's irradiance
-            float4 far  : SV_Target1;   // accumulated far aurora,  a = this frame's depth cut (km)
+            float4 near : SV_Target0;
+            float4 far  : SV_Target1;
         };
 
         ResolveOut fragResolve (v2fTri i, UNITY_VPOS_TYPE screenPos : VPOS)
         {
             ResolveOut o;
-            float2 hp  = screenPos.xy;                                   // this history texel (pixel centre: x + 0.5, y + 0.5)
-            float2 huv = hp * _HistTexelSize.xy;                         // its memory uv
-            // its position in render-pixel units, and the current frame's nearest sample:
-            // the march put this frame's samples at k + 0.5 + jitter (render pixels)
+            float2 hp  = screenPos.xy;
+            float2 huv = hp * _HistTexelSize.xy;
+
             float2 xr   = hp * (_CurTexelSize.zw * _HistTexelSize.xy);
             float2 j    = _TemporalJitter.xy;
             float2 kf   = floor(xr - j);
             float2 dd   = xr - (kf + 0.5 + j);
-            float  wRec = exp(-dot(dd, dd) * _TemporalParams.z);          // the reconstruction kernel
+            float  wRec = exp(-dot(dd, dd) * _TemporalParams.z);
             float2 cuv  = (kf + 0.5) * _CurTexelSize.xy;
             float4 cN   = tex2Dlod(_CurNear, float4(cuv, 0, 0));
             float4 cF   = tex2Dlod(_CurFar,  float4(cuv, 0, 0));
-            float  tMean = tex2Dlod(_CurAux, float4(cuv, 0, 0)).r;
-            // the current frame read smoothly at this texel's own position (the jitter undone):
-            // what a texel shows when it has no usable history
+            float2 aux  = tex2Dlod(_CurAux, float4(cuv, 0, 0)).rg;
+            float  tMean = aux.r, tSpread = aux.g;
+
             float2 buv  = (xr - j) * _CurTexelSize.xy;
             float4 bN   = tex2Dlod(_CurNear, float4(buv, 0, 0));
             float4 bF   = tex2Dlod(_CurFar,  float4(buv, 0, 0));
 
-            // Reproject. Memory uv -> the camera's NDC (y up): with the projection flipped
-            // (rendering into a texture, _ProjectionParams.x = -1) memory rows run up the
-            // image, otherwise down it. The same rule turns last frame's NDC back into a
-            // memory uv of the history buffer, which was rasterised the same way.
             float2 ndc = huv * 2.0 - 1.0;
             ndc.y *= -_ProjectionParams.x;
             float3 right = UNITY_MATRIX_V[0].xyz, up = UNITY_MATRIX_V[1].xyz, fwd = -UNITY_MATRIX_V[2].xyz;
@@ -417,8 +263,7 @@ Shader "RVA/AuroraBlit"
             float  t    = tMean;
             if (t <= 0.0)
             {
-                // nothing seen along this ray this frame: use the shell's middle (near side from
-                // outside, far side from inside), or "far" if the ray misses it
+
                 float3 ro   = _CamPosRel.xyz;
                 float  b    = dot(ro, rd);
                 float  c    = dot(ro, ro) - _ShellParams.x * _ShellParams.x;
@@ -439,23 +284,39 @@ Shader "RVA/AuroraBlit"
             valid = valid && puv.x >= 0.0 && puv.x <= 1.0 && puv.y >= 0.0 && puv.y <= 1.0;
 
             float4 hN = float4(0, 0, 0, 0), hF = float4(0, 0, 0, 0);
+            float  conf = 1.0;
             if (valid)
             {
                 hN = tex2Dlod(_HistNear, float4(puv, 0, 0));
                 hF = tex2Dlod(_HistFar,  float4(puv, 0, 0));
-                // disocclusion: the near-scene depth the march was cut at (km, 0 = not cut) must agree
+
                 float dc = cF.a, dp = hF.a;
-                bool same = (dc <= 0.0 && dp <= 0.0) || (dc > 0.0 && dp > 0.0 && abs(dc - dp) <= 0.1 * max(dc, dp));
+                bool same = (dc == 0.0 && dp == 0.0) || (dc < 0.0 && dp < 0.0)
+                         || (dc > 0.0 && dp > 0.0 && abs(dc - dp) <= 0.1 * max(dc, dp));
                 valid = same;
+
+                if (tSpread > 0.0)
+                {
+                    float  t1 = max(t - tSpread, 0.01 * t), t2 = t + tSpread;
+                    float4 p1 = mul(_PrevVP, float4(_CamPosRel.xyz + rd * t1, 1.0));
+                    float4 p2 = mul(_PrevVP, float4(_CamPosRel.xyz + rd * t2, 1.0));
+                    float2 u1 = p1.xy / max(p1.w, 1e-6), u2 = p2.xy / max(p2.w, 1e-6);
+                    float  spreadTex = length((u1 - u2) * 0.5 * _HistTexelSize.zw);
+                    conf = saturate(1.0 - (spreadTex - _TemporalParams2.x) / max(_TemporalParams2.y - _TemporalParams2.x, 0.01));
+                }
+
+                float  moveTex   = length((puv - huv) * _HistTexelSize.zw);
+                float2 edgeTex   = min(puv, 1.0 - puv) * _HistTexelSize.zw;
+                float  marginTex = clamp(2.0 * moveTex, 1.0, 0.04 * _HistTexelSize.w);
+                conf *= saturate(min(edgeTex.x, edgeTex.y) / marginTex);
             }
-            if (!valid)
+            if (!valid || conf <= 0.0)
             {
                 o.near = float4(bN.rgb, cN.a);
                 o.far  = float4(bF.rgb, cF.a);
                 return o;
             }
 
-            // variance clipping against the current frame's 3x3 neighbourhood around the nearest sample
             float3 mN = 0, qN = 0, mF = 0, qF = 0;
             [unroll]
             for (int y = -1; y <= 1; y++)
@@ -471,9 +332,22 @@ Shader "RVA/AuroraBlit"
             }
             mN /= 9.0; qN /= 9.0; mF /= 9.0; qF /= 9.0;
             float3 sN = sqrt(max(qN - mN * mN, 0.0)), sF = sqrt(max(qF - mF * mF, 0.0));
+
+            float3 hT    = hN.rgb + hF.rgb;
+            float3 mT    = mN + mF;
+            float3 fCur  = mF / max(mT, 1e-6);
+            float3 fHist = hF.rgb / max(hT, 1e-6);
+            float  wCur  = saturate(dot(mT, 1.0 / 3.0) * 1e4);
+            float3 fFar  = lerp(fHist, fCur, wCur);
+            hN.rgb = hT * (1.0 - fFar);
+            hF.rgb = hT * fFar;
+
             float  g  = _TemporalParams.y;
             float3 hNc = clamp(hN.rgb, mN - g * sN, mN + g * sN);
             float3 hFc = clamp(hF.rgb, mF - g * sF, mF + g * sF);
+
+            hNc = lerp(bN.rgb, hNc, conf);
+            hFc = lerp(bF.rgb, hFc, conf);
 
             float a = (1.0 - _TemporalParams.x) * wRec;
             o.near = float4(lerp(hNc, cN.rgb, a), cN.a);
@@ -482,7 +356,6 @@ Shader "RVA/AuroraBlit"
         }
         ENDCG
 
-        // 0: additive composite, the aurora
         Pass
         {
             Blend One One
@@ -497,7 +370,6 @@ Shader "RVA/AuroraBlit"
             ENDCG
         }
 
-        // 1: debug, aurora buffer only (aurora + irradiance as a flat tint, scene hidden)
         Pass
         {
             Blend One Zero
@@ -508,58 +380,21 @@ Shader "RVA/AuroraBlit"
             fixed4 frag (v2f i, UNITY_VPOS_TYPE screenPos : VPOS) : SV_Target
             {
                 float2 uv = screenUV(screenPos.xy);
-                return fixed4(tonemap(auroraAt(uv) + _GlowColor.rgb * bufferSample(uv).a), 1.0);
-            }
-            ENDCG
-        }
-
-        // 2: cloud light, additive
-        Pass
-        {
-            Blend One One
-            CGPROGRAM
-            #pragma vertex   vert
-            #pragma fragment frag
-            #pragma target   3.0
-            fixed4 frag (v2f i, UNITY_VPOS_TYPE screenPos : VPOS) : SV_Target
-            {
-                float2 uv = screenUV(screenPos.xy);
-                float  E  = bufferSample(uv).a;
-                if (E <= 0.0005) return fixed4(0, 0, 0, 1);
-                float  cloud = cloudAmount(uv);
-                float3 c = _GlowColor.rgb * (E * cloud * _CloudLightGain * _CloudLightView);
-                return fixed4(tonemap(c), 1.0);
-            }
-            ENDCG
-        }
-
-        // 3: debug, scene hidden. Left half: the cloud amount pass 2 lights
-        //    (white = cloud; in buffer mode after the haze floor, so clear sky
-        //    should be black). Right half: the irradiance the aurora puts on
-        //    the cloud-top shell under each pixel, in the light's colour and at
-        //    the light's strength, the glow you would get on a solid cloud.
-        Pass
-        {
-            Blend One Zero
-            CGPROGRAM
-            #pragma vertex   vert
-            #pragma fragment frag
-            #pragma target   3.0
-            fixed4 frag (v2f i, UNITY_VPOS_TYPE screenPos : VPOS) : SV_Target
-            {
-                float2 uv = screenUV(screenPos.xy);
-                if (uv.x > 0.5)
+                if (_BlitDebug > 0.5)
                 {
-                    float E = bufferSample(uv).a;
-                    return fixed4(tonemap(_GlowColor.rgb * (E * _CloudLightGain * _CloudLightView)), 1.0);
+
+                    float  Tb = (_CloudOcclusion > 0.5) ? cloudBufferT(uv) : 1.0;
+                    float  Te = cloudTransmittance(uv);
+                    float4 nearC; float3 farC; float farVis;
+                    auroraSample(uv, nearC, farC, farVis);
+                    float  far = saturate(dot(farC, 1.0 / 3.0) * _Exposure) * farVis;
+                    return fixed4(Tb, Te + far * (1.0 - Te), Te, 1.0);
                 }
-                float amount = (_CloudGrabMode > 1.5) ? cloudAmount(uv) : saturate(cloudAmount(uv) * 4.0);
-                return fixed4(amount, amount, amount, 1.0);
+                return fixed4(tonemap(auroraAt(uv)), 1.0);
             }
             ENDCG
         }
 
-        // 4: temporal resolve (1.1.0): one triangle into the two history buffers
         Pass
         {
             Blend Off
@@ -570,18 +405,6 @@ Shader "RVA/AuroraBlit"
             ENDCG
         }
 
-        // 5: OCCLUDER DEPTH (1.1.0). AuroraRenderer draws the body the vessel is at into a
-        //    buffer of its own with the camera's own matrices, while the camera sees past the
-        //    terrain KSP has loaded (zoomed far out, or above the body's PQS limit). The mesh is
-        //    a unit sphere that this pass pushes out by the body's terrain height map (built by
-        //    the plugin from the height function, which never switches off), so the silhouette
-        //    carries the real highlands; with no map yet it is KSP's own smooth scaled-space
-        //    model, drawn as it is. Writes 1 / the eye depth in metres (0 = nothing drawn); the
-        //    march reads it where the scene depth is clear. No depth buffer is involved: the
-        //    target is cleared to 0 and the pass blends with Max, both faces, so each texel ends
-        //    up holding the nearest surface whatever the platform's depth conventions. The clip
-        //    z is held inside the far plane: the limb can lie beyond it (a high Mun orbit), and
-        //    the depth written comes from the view position anyway.
         Pass
         {
             BlendOp Max
@@ -603,15 +426,15 @@ Shader "RVA/AuroraBlit"
                 float3 p = v.vertex.xyz;
                 if (_OccluderHeightParams.y > 0.5)
                 {
-                    // the unit sphere's vertex, out to the datum plus the map's height there
+
                     float h = tex2Dlod(_OccluderHeightMap, float4(v.uv, 0.0, 0.0)).r;
                     p = normalize(p) * (_OccluderHeightParams.x + h);
                 }
                 o.pos = UnityObjectToClipPos(float4(p, 1.0));
                 #if defined(UNITY_REVERSED_Z)
-                o.pos.z = max(o.pos.z, 0.0);              // the far plane is z = 0 here
+                o.pos.z = max(o.pos.z, 0.0);
                 #else
-                o.pos.z = min(o.pos.z, o.pos.w);          // and z = w here
+                o.pos.z = min(o.pos.z, o.pos.w);
                 #endif
                 o.eye = -UnityObjectToViewPos(p).z;
                 return o;
