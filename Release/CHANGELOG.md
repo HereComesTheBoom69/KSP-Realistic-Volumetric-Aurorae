@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.2.1 (2026-11-03)
+
+Render scale by pixel budget for the body your at.
+
+- The budget only ever applied to other bodies in flight and to the map view, so from a high
+  orbit Kerbin's own aurora stayed at 0.25 of a screen it filled a tenth of, and the only
+  way to a sharp band was pushing the slider to 1. Now the scale goes up as the shell shrinks
+  on screen (0.3 at 300 km, 1.0 from about 3000 km up on a 5120x1440 screen) for the same
+  cost as the configured scale filling the view, and nothing changes inside the band. The
+  slider shows the scale in use. Scale steps have a bit of hysteresis so a camera sitting on
+  a step doesnt flip the buffers back and forth.
+- No shader change, build tag stays 1131. DLL only.
+
 ## 1.2.0 (2026-11-02)
 
 New bodies

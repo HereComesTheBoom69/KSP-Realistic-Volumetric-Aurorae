@@ -57,8 +57,9 @@ into the file. `enabled = false` in a node turns that body off.
 Other bodies aurorae are drawn too, in the map view, the tracking station, and from a
 vessel when the body is close enough to matter (Jool from Laythe, Laythe from Jool orbit).
 A body that only fills part of the view renders at a higher scale for the same pixel budget
-(up to 1.0 in flight, 0.6 in the map). The body your at hides them, mountains included, at
-any altitude. Where KSP has the terrain loaded its the terrain, where it hasnt (camera
+(up to 1.0 in flight, 0.6 in the map), and that goes for the body your at as well once your
+high enough that its aurora doesnt fill the screen. The body your at hides them, mountains
+included, at any altitude. Where KSP has the terrain loaded its the terrain, where it hasnt (camera
 zoomed way out, or high enough that KSP shows the smooth distant model) the plugin uses a
 model of the body it builds from the terrain height function. Maps for the stock bodies
 ship in `PluginData/terrain/`. A planet pack body without one gets sampled once over about

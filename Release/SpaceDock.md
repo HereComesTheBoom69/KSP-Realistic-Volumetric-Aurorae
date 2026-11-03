@@ -33,5 +33,5 @@ License: CC BY-NC-SA 4.0, (c) 2026 HereComesTheBoom. Source: https://github.com/
 - Game: KSP. KSP version 1.12.5
 - License dropdown: **CC BY-NC-SA 4.0** (CKAN reads it from here, has to match LICENSE.txt)
 - Source code: the github repo
-- Version: 1.2.0, changelog: paste Release/ReleaseNotes-1.2.0.md (same text as the github release)
+- Version: 1.2.1, changelog: paste Release/ReleaseNotes-1.2.1.md (same text as the github release)
 - Tick **Add to CKAN** (mod page, Edit) after the first upload, spacedocks bot opens the NetKAN PR for you

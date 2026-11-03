@@ -386,17 +386,7 @@ namespace RVA
 
                 if (!inMap && localRenderer != null && camT != null && visible)
                 {
-                    float target = configuredScale;
-                    if (autoScaleOn)
-                    {
-                        Camera cam = FlightCamera.fetch.mainCamera;
-                        float vFov = Mathf.Max(cam.fieldOfView, 1f);
-                        float hFov = 2f * Mathf.Atan(Mathf.Tan(vFov * 0.5f * Mathf.Deg2Rad) * Mathf.Max(cam.aspect, 0.1f)) * Mathf.Rad2Deg;
-                        float span = 2f * lastAngleDeg;
-                        float area = Mathf.Min(1f, span / hFov) * Mathf.Min(1f, span / vFov);
-                        target = Mathf.Clamp(configuredScale / Mathf.Sqrt(Mathf.Max(area, 1e-4f)), configuredScale, 1f);
-                        target = Mathf.Round(target * 20f) / 20f;
-                    }
+                    float target = autoScaleOn ? BudgetScale(configuredScale, 1f, localRenderer.renderScale, FlightCamera.fetch.mainCamera, 2f * lastAngleDeg) : configuredScale;
                     if (Mathf.Abs(target - localRenderer.renderScale) > 0.001f) { localRenderer.renderScale = target; autoScale = target; }
                 }
             }
@@ -405,6 +395,19 @@ namespace RVA
             bool useLocal = localRenderer != null && !inMap;
             if (localRenderer != null) localRenderer.renderingEnabled = visible && useLocal;
             if (scaled != null) scaled.SetActive(visible && !useLocal);
+        }
+
+        public static float BudgetScale(float configured, float cap, float current, Camera cam, float spanDeg)
+        {
+            if (cam == null) return configured;
+            cap = Mathf.Max(cap, configured);
+            float vFov = Mathf.Max(cam.fieldOfView, 1f);
+            float hFov = 2f * Mathf.Atan(Mathf.Tan(vFov * 0.5f * Mathf.Deg2Rad) * Mathf.Max(cam.aspect, 0.1f)) * Mathf.Rad2Deg;
+            float area = Mathf.Min(1f, spanDeg / hFov) * Mathf.Min(1f, spanDeg / vFov);
+            float t    = Mathf.Clamp(configured / Mathf.Sqrt(Mathf.Max(area, 1e-4f)), configured, cap);
+            if (t <= configured + 0.001f) return configured;
+            if (current > configured + 0.001f && current <= cap + 0.001f && Mathf.Abs(t - current) < 0.04f) return current;
+            return Mathf.Clamp(Mathf.Round(t * 20f) / 20f, configured, cap);
         }
 
         public static CelestialBody MapFocusBody()

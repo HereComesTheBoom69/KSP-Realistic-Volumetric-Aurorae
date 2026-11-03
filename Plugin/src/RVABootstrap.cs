@@ -24,7 +24,7 @@ namespace RVA
 
         public static AuroraSettings Settings => AuroraConfigs.Global;
 
-        public const string Version = "1.2.0";
+        public const string Version = "1.2.1";
 
         const string LogPrefix = "[RVA]";
         const string ModRelativePath    = "GameData/RealisticVolumetricAurorae";
@@ -487,7 +487,7 @@ namespace RVA
 
             if (renderer != null)
             {
-                renderer.renderScale    = Mathf.Clamp(s.renderScale, 0.1f, 1f);
+                renderer.renderScale    = LocalRenderScale(s, FlightCamera.fetch != null ? FlightCamera.fetch.mainCamera : null);
                 renderer.exposure       = s.exposure;
                 renderer.flipY          = s.flipY;
                 renderer.compositeEvent = s.compositeEvent;
@@ -549,6 +549,9 @@ namespace RVA
 
             if (renderer != null)
             {
+                float scale = LocalRenderScale(s, camT != null ? FlightCamera.fetch.mainCamera : null);
+                if (Mathf.Abs(scale - renderer.renderScale) > 0.001f) renderer.renderScale = scale;
+
                 int wanted = s.compositeEvent;
                 if (s.autoAboveClouds && camT != null && camAlt > AuroraCloudTops.EffectiveKm(s, body.bodyName) * 1000f)
                     wanted = s.compositeEventAbove;
@@ -594,6 +597,20 @@ namespace RVA
         bool eclipsed;
         bool   planetModelLogged;
         string planetModelNote = "";
+
+        public float LocalSpanDeg { get; private set; }
+
+        float LocalRenderScale(AuroraSettings s, Camera cam)
+        {
+            float cfg = Mathf.Clamp(s.renderScale, 0.1f, 1f);
+            LocalSpanDeg = 0f;
+            if (!s.distantAutoScale || cam == null || body == null || renderer == null) return cfg;
+            float top  = radius * (1f + s.altBaseFraction + s.altTopFraction * Mathf.Max(s.stormHeightGain, 1f));
+            float dist = (cam.transform.position - body.transform.position).magnitude;
+            float half = dist <= top ? 90f : Mathf.Asin(Mathf.Clamp01(top / dist)) * Mathf.Rad2Deg;
+            LocalSpanDeg = 2f * half;
+            return ScaledAuroraInstance.BudgetScale(cfg, 1f, renderer.renderScale, cam, LocalSpanDeg);
+        }
 
         void OnDestroy()
         {
@@ -701,11 +718,7 @@ namespace RVA
                     float dist = Vector3.Distance(scaledCam.transform.position, body.scaledBody.transform.position);
                     float half = dist <= r ? 90f : Mathf.Asin(Mathf.Clamp01(r / dist)) * Mathf.Rad2Deg;
                     lastSpanDeg = 2f * half;
-                    float vFov = Mathf.Max(scaledCam.fieldOfView, 1f);
-                    float hFov = 2f * Mathf.Atan(Mathf.Tan(vFov * 0.5f * Mathf.Deg2Rad) * Mathf.Max(scaledCam.aspect, 0.1f)) * Mathf.Rad2Deg;
-                    float area = Mathf.Min(1f, lastSpanDeg / hFov) * Mathf.Min(1f, lastSpanDeg / vFov);
-                    target = Mathf.Clamp(mapScale / Mathf.Sqrt(Mathf.Max(area, 1e-4f)), mapScale, mapScaleMax);
-                    target = Mathf.Round(target * 20f) / 20f;
+                    target = ScaledAuroraInstance.BudgetScale(mapScale, mapScaleMax, scaledRenderer.renderScale, scaledCam, lastSpanDeg);
                 }
             }
             else lastSpanDeg = 0f;

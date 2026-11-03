@@ -302,7 +302,7 @@ namespace RVA
             }
 
             Header($"Performance / sampling for {editBody}");
-            changed |= Slider("Render scale",                        ref s.renderScale,       0.1f,   1f,    "F2", nameof(s.renderScale));
+            changed |= Slider(rend != null && Mathf.Abs(rend.renderScale - s.renderScale) > 0.001f ? $"Render scale (now {rend.renderScale:F2} by pixel budget)" : "Render scale", ref s.renderScale, 0.1f, 1f, "F2", nameof(s.renderScale));
             changed |= Slider($"Step length ({s.stepLength * rkm:F1} km far away)", ref s.stepLength,  0.001f, 0.03f, "F4", nameof(s.stepLength));
             changed |= Slider($"Near step ({s.stepLength * s.nearStepScale * rkm:F2} km, up close)", ref s.nearStepScale, 0.05f, 1f, "F3", nameof(s.nearStepScale));
             changed |= Slider($"Step growth ({s.stepGrowth * 100f:F1} % of the distance from the camera)", ref s.stepGrowth, 0f, 0.1f, "F3", nameof(s.stepGrowth));
@@ -386,7 +386,7 @@ namespace RVA
             changed |= Slider("   Map render scale", ref s.mapRenderScale, 0.1f, 1f, "F2", nameof(s.mapRenderScale));
             changed |= Slider("   Map scale cap (per body, keeps vram in check with several in view)", ref s.mapAutoScaleMax, 0.3f, 1f, "F2", nameof(s.mapAutoScaleMax));
             changed |= Slider("   Other bodies drawn from (degrees of view the band spans)", ref s.distantMinAngleDeg, 0f, 5f, "F2", nameof(s.distantMinAngleDeg));
-            changed |= Toggle("   Render scale by pixel budget (small bodies on screen render sharper for the same cost)", ref s.distantAutoScale, nameof(s.distantAutoScale));
+            changed |= Toggle("   Render scale by pixel budget (a body thats small on screen renders sharper for the same cost, the one your at too)", ref s.distantAutoScale, nameof(s.distantAutoScale));
             changed |= EventRow("   Map composite at:", ref s.mapCompositeEvent, nameof(s.mapCompositeEvent),
                                 AuroraRenderer.EvAfterForwardAlpha, AuroraRenderer.EvBeforeImageEffects, AuroraRenderer.EvAfterImageEffects,
                                 AuroraRenderer.EvAfterEverything, AuroraRenderer.EvBeforeForwardAlpha, AuroraRenderer.EvAfterForwardOpaque);

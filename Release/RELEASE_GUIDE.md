@@ -142,7 +142,7 @@ later.
 
 Add-on Releases. Rules as they apply here:
 - Title carries the KSP and mod version:
-  `[1.12.x] Realistic Volumetric Aurorae (RVA) v1.2.0 - volumetric aurorae for Kerbin, Jool, Laythe, Duna and Eve`
+  `[1.12.x] Realistic Volumetric Aurorae (RVA) v1.2.1 - volumetric aurorae for Kerbin, Jool, Laythe, Duna and Eve`
 - License named in the post AND in the download (LICENSE.txt in the zip).
 - Link to source. Plugins must have source available.
 - Download links: SpaceDock, GitHub release, CKAN once indexed.
