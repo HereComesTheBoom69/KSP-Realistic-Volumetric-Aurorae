@@ -13,7 +13,7 @@ Volumetric aurorae for Kerbin, Jool, Laythe, Duna and Eve. Folding ribbons, rays
 - Fades out past the terminator
 - Hidden where your vessel or nearby terrain is in front of it, crisp silhouettes at any render scale
 - With EVE: hidden by the clouds, volumetrics per pixel by there own transmittance and the 2D layers as drawn. Only clouds and terrain ever mask it, at any altitude
-- Drawn in flight, map view and the tracking station
+- Drawn in flight, map view, the tracking station and on the main menu planet
 - Five bodies with there own looks: Kerbin's green and red oval, Jool's gas giant aurora in hydrogen pinks and violets tight around the poles, Laythe's oxygen aurora driven by Jool's magnetosphere (storms down to the equator, the whole moon lit while its in Jool's shadow), Duna's pale green with the CO2 violet-blue, Eve's thin bright sheet above the clouds. Any body can get one with a config file
 - The aurora lights your vessel (not the ground or clouds) from the directions the light comes from. Per body switch
 - Live tuning window (Alt+F8): brightness, colours, rays, altitude, latitude, ribbon width and folds, animation speed, time between storms, render scale, per row reset and Save
@@ -33,5 +33,5 @@ License: CC BY-NC-SA 4.0, (c) 2026 HereComesTheBoom. Source: https://github.com/
 - Game: KSP. KSP version 1.12.5
 - License dropdown: **CC BY-NC-SA 4.0** (CKAN reads it from here, has to match LICENSE.txt)
 - Source code: the github repo
-- Version: 1.2.1, changelog: paste Release/ReleaseNotes-1.2.1.md (same text as the github release)
+- Version: 1.2.2, changelog: paste Release/ReleaseNotes-1.2.2.md (same text as the github release)
 - Tick **Add to CKAN** (mod page, Edit) after the first upload, spacedocks bot opens the NetKAN PR for you

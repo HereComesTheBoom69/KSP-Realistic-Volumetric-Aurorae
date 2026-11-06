@@ -29,7 +29,7 @@ links both. CKAN happens on its own after SpaceDock.
        GameData/RealisticVolumetricAurorae/Config/*.cfg
 
 5. DLL and bundle from the same source: after rebuilding either, start KSP and look for
-   `[RVA] Shader build 1131 matches the plugin` in KSP.log (status line in the window
+   `[RVA] Shader build 1132 matches the plugin` in KSP.log (status line in the window
    shows it too). `SHADER BUILD ... DOES NOT MATCH PLUGIN` means one of them is stale,
    rebuild it from the current kit before testing anything else.
 6. **Test the zip, not your working folder.** Move your own
@@ -142,7 +142,7 @@ later.
 
 Add-on Releases. Rules as they apply here:
 - Title carries the KSP and mod version:
-  `[1.12.x] Realistic Volumetric Aurorae (RVA) v1.2.1 - volumetric aurorae for Kerbin, Jool, Laythe, Duna and Eve`
+  `[1.12.x] Realistic Volumetric Aurorae (RVA) v1.2.2 - volumetric aurorae for Kerbin, Jool, Laythe, Duna and Eve`
 - License named in the post AND in the download (LICENSE.txt in the zip).
 - Link to source. Plugins must have source available.
 - Download links: SpaceDock, GitHub release, CKAN once indexed.

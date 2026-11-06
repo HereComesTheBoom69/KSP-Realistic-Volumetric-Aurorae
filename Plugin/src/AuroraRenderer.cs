@@ -14,6 +14,7 @@ public class AuroraRenderer : MonoBehaviour
 
     public Material auroraMaterial;
     public string   cameraName;
+    public Camera   cameraOverride;
     public Material syncFrom;
     public float    syncScale = 1f;
     public bool     renderingEnabled = true;
@@ -321,7 +322,7 @@ public class AuroraRenderer : MonoBehaviour
         if (sceneDepthOcclusion) farCam.depthTextureMode |= DepthTextureMode.Depth;
         auroraMaterial.SetFloat("_UseSceneDepth", sceneDepthOcclusion ? 1f : 0f);
 
-        if (string.IsNullOrEmpty(cameraName)) farCam.forceIntoRenderTexture = true;
+        if (string.IsNullOrEmpty(cameraName) && cameraOverride == null) farCam.forceIntoRenderTexture = true;
 
         Camera.onPreCull   += OnAnyCameraPreCull;
         Camera.onPreRender += OnAnyCameraPreRender;
@@ -810,6 +811,7 @@ public class AuroraRenderer : MonoBehaviour
 
     Camera FindTargetCamera(out string mode)
     {
+        if (cameraOverride != null) { mode = "given camera"; return cameraOverride; }
         if (!string.IsNullOrEmpty(cameraName)) { mode = cameraName; return FindCamera(cameraName); }
         return FindFlightCamera(out mode);
     }

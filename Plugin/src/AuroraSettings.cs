@@ -146,6 +146,7 @@ namespace RVA
         [Global] [DevOnly] public bool cloudBufferFlipY    = false;
 
         [Global] public bool mapView           = true;
+        [Global] public bool mainMenu          = true;
         [Global] [DevOnly] public float mapRenderScale    = 0.3f;
         [Global] [DevOnly] public float mapAutoScaleMax   = 0.6f;
         [Global] [DevOnly] public int mapCompositeEvent = 0;

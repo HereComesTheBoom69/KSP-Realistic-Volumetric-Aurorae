@@ -10,7 +10,7 @@ arcs that make up the oval. Most of the time its quiet. Every now and then a sto
 through, the oval widens and slides toward the equator, the outer arcs fade in, and then it
 calms back down. From the ground the curtains fill the sky, from orbit the oval sits on the
 night side and follows the terminator around. Works in flight, map view and the tracking
-station. Terrain and your vessel hide it where there in front of it, and if you have EVE
+station, and on the title screen. Terrain and your vessel hide it where there in front of it, and if you have EVE
 with volumetric clouds the clouds hide it too, per pixel, using there own transmittance.
 
 ## Install
@@ -97,7 +97,7 @@ lights compete for Unity's vertex light slots.
 ## If something looks wrong
 
 The status line in the window (Alt+F8) shows the shader build. It should say
-`shader build 1131`. A line in caps about a mismatch means the dll and the shader bundle
+`shader build 1132`. A line in caps about a mismatch means the dll and the shader bundle
 are from different versions, reinstall the zip so both get replaced. KSP.log has the same
 message under `[RVA]`.
 
@@ -120,7 +120,7 @@ message under `[RVA]`.
 
 Alt+F8 in flight. Every slider applies instantly: brightness and exposure, the three colours
 and where they sit in the band, ray density and fineness, altitude, latitude, ribbon width
-and folds, animation speeds, time between storms, render scale, map view toggle, hotkey.
+and folds, animation speeds, time between storms, render scale, map view and main menu toggles, hotkey.
 The **def** button on each row restores the shipped value. *Save to settings.cfg* keeps your
 changes, *preset values* brings the shipped look back for that body. Hovering over the
 window stops the camera from rotating. If you'd rather use a text editor,
@@ -149,7 +149,7 @@ more closely.
 
 - Lights the vessel only, not the ground or the clouds.
 - Ovals on the rotation poles, no magnetic tilt.
-- The map view / tracking station instance has no cloud occlusion.
+- The map view / tracking station / main menu instances have no cloud occlusion.
 - Settings are global, not per save.
 
 ## License

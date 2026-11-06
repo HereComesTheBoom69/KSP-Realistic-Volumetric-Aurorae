@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.2.2 (2026-11-06)
+
+- The aurora shows on the main menu planet. A MainMenu addon finds the menu's own Kerbin
+  object (its a separate mesh in the menu scene, not the real scaled body), measures its
+  radius off the mesh, and runs a full instance on it (own material, meander LUT, storm
+  scheduler) through the menu camera, depth occluded by the planet and the Mun, with the
+  sun taken from the menus directional light and the pixel budget on. Global toggle
+  `mainMenu` (on), in the window under the map view row. Uses the RVA preset of whatever
+  body the menu object is named after, so a Kopernicus menu body swap still gets one if it
+  has a preset. No cloud occlusion there, same as the map view.
+- Shader: the march can rotate into a planet frame given by `_PlanetAxis` (w = 1 to use).
+  The menu planet isnt guaranteed to have its pole on world Y like the real bodies, so the
+  menu instance passes its axis; nothing else sets it and the default is the old
+  behaviour. Groundwork for magnetic tilt later. Shader build 1132 (both halves rebuilt).
+
 ## 1.2.1 (2026-11-03)
 
 Render scale by pixel budget for the body your at.

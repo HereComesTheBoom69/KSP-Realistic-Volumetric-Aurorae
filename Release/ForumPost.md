@@ -1,10 +1,10 @@
 <!-- thread title (Add-on Releases):
-[1.12.x] Realistic Volumetric Aurorae (RVA) v1.2.1 - volumetric aurorae for Kerbin, Jool, Laythe, Duna and Eve
+[1.12.x] Realistic Volumetric Aurorae (RVA) v1.2.2 - volumetric aurorae for Kerbin, Jool, Laythe, Duna and Eve
 paste the body below into the forum editor, headings turn into bold lines. fill in anything
 still marked <...> and attach 3 or 4 screenshots (night side orbit, ground view under the
 curtains, map view) -->
 
-**Realistic Volumetric Aurorae (RVA)** v1.2.1 for KSP 1.12.x
+**Realistic Volumetric Aurorae (RVA)** v1.2.2 for KSP 1.12.x
 
 Volumetric aurorae for Kerbin, Jool, Laythe, Duna and Eve. This isnt a texture, its a raymarched glow layer drawn around the planet every frame. Thin folding ribbons, rays tapering off at the top, green at the base and red up top, three arcs forming the oval. Its quiet most of the time, then a storm rolls in, the oval widens and slides toward the equator, the outer arcs fade in, and it settles back down. From the ground the curtains fill the sky. From orbit the oval sits on the night side and follows the terminator around.
 
@@ -17,7 +17,7 @@ Every body has its own look. Jool's is a gas giant one, hydrogen pinks and viole
 - Fades out past the terminator.
 - Hidden where your vessel or nearby terrain is in front of it, crisp silhouettes at any render scale.
 - With EVE the clouds hide it, the volumetrics per pixel using there own transmittance and the flat 2D layers as drawn, so only clouds and terrain ever mask the aurora at any altitude. You see it through thin cloud and not through thick cloud.
-- Drawn in flight, map view and the tracking station.
+- Drawn in flight, map view, the tracking station and on the main menu planet.
 - The aurora lights your vessel. Up to four lights from the directions the light actually comes from, in its own colour, fading with daylight and rising with storms. Vessel only, not the ground or clouds, can be turned off per body.
 - Live tuning window (Alt+F8): brightness, colours and where they sit in the band, ray density and fineness, altitude, latitude, ribbon width and folds, animation speed, time between storms, render scale. Every row has a reset to default button and Save keeps your look.
 - No dependencies. Works with Scatterer (both camera modes).
@@ -43,6 +43,7 @@ Every body has its own look. Jool's is a gas giant one, hydrogen pinks and viole
 **Source:** https://github.com/HereComesTheBoom69/KSP-Realistic-Volumetric-Aurorae (plugin C# + shader source, build instructions)
 
 **Changelog**
+- 1.2.2: the aurora shows on the main menu planet (toggle in the window).
 - 1.2.1: render scale by pixel budget now covers the body your orbiting, so from a high orbit the band sharpens up as the planet shrinks on screen (up to render scale 1) for the same cost instead of staying a blur.
 - 1.2.0: Duna and Eve. EVE's 2D cloud layers hide the aurora too, the stale cloud mask above the volumetrics fade-out is gone, the cloud band at the horizon is closed, cloud top read from EVE's configs. Limb decided per screen pixel (no more aurora through a sliver of the limb), the temporal "split" on fast camera moves fixed, map view renders small bodies sharper. Laythe preset retuned.
 - 1.1.1: another bodys aurora hides behind the terrain of the body your at at every altitude and zoom (Kerbin's from the Mun), the plugin builds its own model of the body from the terrain height function. Fix for the aurora fading with camera angle around airless bodies.

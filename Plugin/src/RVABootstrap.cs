@@ -15,7 +15,7 @@ namespace RVA
     {
         public static Shader AuroraShader { get; private set; }
 
-        public const int ShaderBuild = 1131;
+        public const int ShaderBuild = 1132;
 
         public static int ShaderBuildFound { get; private set; }
         public static bool ShaderBuildMatches => ShaderBuildFound == ShaderBuild;
@@ -24,7 +24,7 @@ namespace RVA
 
         public static AuroraSettings Settings => AuroraConfigs.Global;
 
-        public const string Version = "1.2.1";
+        public const string Version = "1.2.2";
 
         const string LogPrefix = "[RVA]";
         const string ModRelativePath    = "GameData/RealisticVolumetricAurorae";

@@ -103,13 +103,14 @@ Shader "RVA/Aurora"
         _FarSplit      ("Split at the cloud shell (0 or 1)", Float) = 0.0
 
         _SunDir        ("Sun direction (set by C#)", Vector) = (0, 0, 0, 0)
+        _PlanetAxis    ("Planet axis (set by C#, w = 1 to use)", Vector) = (0, 1, 0, 0)
         _DaylightFade  ("Hide in daylight", Range(0, 1)) = 1.0
 
         _PixelAngle  ("Pixel angle (set by C#)", Float) = 0.0
 
         _DebugMode   ("Debug mode (0 = off)", Float) = 0.0
 
-        _RVAShaderBuild ("Shader build (read by C#)", Float) = 1131
+        _RVAShaderBuild ("Shader build (read by C#)", Float) = 1132
     }
 
     SubShader
@@ -150,6 +151,7 @@ Shader "RVA/Aurora"
             float4    _RayJitter;
             float     _TemporalOffset;
             float4 _SunDir;
+            float4 _PlanetAxis;
             float  _DaylightFade;
             float  _Brightness;
             float  _PixelAngle;
@@ -224,6 +226,15 @@ Shader "RVA/Aurora"
             float3 rotXZ(float3 p, float c, float s)
             {
                 return float3(p.x * c - p.z * s, p.y, p.x * s + p.z * c);
+            }
+
+            float3 toBody(float3 v)
+            {
+                float3 up    = normalize(_PlanetAxis.xyz);
+                float3 refv  = abs(up.z) < 0.9 ? float3(0.0, 0.0, 1.0) : float3(1.0, 0.0, 0.0);
+                float3 right = normalize(cross(up, refv));
+                float3 fwd   = cross(right, up);
+                return float3(dot(v, right), dot(v, up), dot(v, fwd));
             }
 
             float fbmAA(float3 p, float cellSize, float px)
@@ -677,6 +688,14 @@ Shader "RVA/Aurora"
                 if (_DebugMode > 0.5 && _DebugMode < 1.5)
                     return outNF(float3(2.0, 0.0, 0.0), float3(0, 0, 0), 1.0, 0.0, 0.0);
 
+                float3 camFwd = -UNITY_MATRIX_V[2].xyz;
+                float3 occC   = _Occluder.xyz;
+                float3 sunB   = _SunDir.xyz;
+                if (_PlanetAxis.w > 0.5)
+                {
+                    ro = toBody(ro); rd = toBody(rd); camFwd = toBody(camFwd); occC = toBody(occC); sunB = toBody(sunB);
+                }
+
                 float thick  = max(_AltTop - _AltBase, 1e-5);
                 float rOuter = _SphereRadius + _AltTop + thick * 1.6 * _Spikiness;
                 float2 tNearFar = raySphereShell(ro, rd, rOuter);
@@ -724,7 +743,7 @@ Shader "RVA/Aurora"
                 bool sphereCut = false;
                 if (_Occluder.w > 0.0)
                 {
-                    float3 roO = ro - _Occluder.xyz;
+                    float3 roO = ro - occC;
                     float  bO  = dot(roO, rd);
                     float  cO  = dot(roO, roO) - _Occluder.w * _Occluder.w;
                     if (cO > 0.0)
@@ -749,7 +768,6 @@ Shader "RVA/Aurora"
                 {
                     float rawDepth = SAMPLE_DEPTH_TEXTURE_PROJ(_CameraDepthTexture, UNITY_PROJ_COORD(i.screenPos));
                     float sceneZ   = LinearEyeDepth(rawDepth);
-                    float3 camFwd  = -UNITY_MATRIX_V[2].xyz;
                     tScene  = sceneZ / max(dot(rd, camFwd), 0.05);
                     nearHit = sceneZ < _SphereRadius * 0.05;
                     if (nearHit && tScene < tEnd)
@@ -775,7 +793,7 @@ Shader "RVA/Aurora"
                     float3 c = float3(0, 0, 0);
                     if (_UseSceneDepth > 0.5)
                     {
-                        float z = tScene * max(dot(rd, -UNITY_MATRIX_V[2].xyz), 0.05);
+                        float z = tScene * max(dot(rd, camFwd), 0.05);
                         float l = log10(max(z, 1.0));
                         if      (z >= _ProjectionParams.z * 0.98) c = float3(1, 1, 1);
                         else if (l >= 6.0) c = float3(1, 0, 0);
@@ -941,7 +959,7 @@ Shader "RVA/Aurora"
 
                         float dayAtten = 1.0;
                         if (_SunDir.w > 0.001 && _DaylightFade > 0.001)
-                            dayAtten = 1.0 - _DaylightFade * _SunDir.w * smoothstep(-0.2, 0.05, dot(normalize(p), _SunDir.xyz));
+                            dayAtten = 1.0 - _DaylightFade * _SunDir.w * smoothstep(-0.2, 0.05, dot(normalize(p), sunB));
 
                         float knee = saturate((1.6 - alpha) * 1.6667);
                         float contribution = fld.x * dtc * kShell * dayAtten * knee;

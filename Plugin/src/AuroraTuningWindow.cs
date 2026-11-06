@@ -383,6 +383,7 @@ namespace RVA
             }
             Header("Map view / tracking station / other bodies");
             changed |= Toggle("   Draw in the map view / tracking station / on other bodies", ref s.mapView, nameof(s.mapView));
+            changed |= Toggle("   Draw on the main menu planet (next time the menu loads)", ref s.mainMenu, nameof(s.mainMenu));
             changed |= Slider("   Map render scale", ref s.mapRenderScale, 0.1f, 1f, "F2", nameof(s.mapRenderScale));
             changed |= Slider("   Map scale cap (per body, keeps vram in check with several in view)", ref s.mapAutoScaleMax, 0.3f, 1f, "F2", nameof(s.mapAutoScaleMax));
             changed |= Slider("   Other bodies drawn from (degrees of view the band spans)", ref s.distantMinAngleDeg, 0f, 5f, "F2", nameof(s.distantMinAngleDeg));

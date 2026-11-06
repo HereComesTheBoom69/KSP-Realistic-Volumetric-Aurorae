@@ -31,7 +31,8 @@ Unity/Assets/           drop into an empty Unity 2019.4.18f1 project
   Scripts/              old copies of the scheduler/noise/meander scripts for the test scene. the plugin's are the current ones
   Editor/               BuildRVABundle.cs -> menu RVA > Build Shader Bundle
 Plugin/                 RealisticVolumetricAurorae.csproj, configs Release and Dev
-  src/                  16 .cs files. RVABootstrap is the entry point (flight + tracking station setup, scaled driver),
+  src/                  17 .cs files. RVABootstrap is the entry point (flight + tracking station setup, scaled driver),
+                        RVAMainMenu puts the aurora on the title screen planet,
                         AuroraRenderer does the actual rendering, AuroraSettings/AuroraConfigs/AuroraTuningWindow are
                         the settings side, AuroraCloudTops reads EVE's cloud configs, AuroraCloud2D grabs EVE's flat
                         layers, AuroraTerrainMap builds the height maps, ScaledAuroraInstance is the map view / other
